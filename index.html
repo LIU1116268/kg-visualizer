@@ -345,8 +345,11 @@ function showGraphView(){
 }
 function renderLearningCards(){
   const grid = document.getElementById('learningGrid');
-  const lts = (currentData && currentData.entities && currentData.entities.learning_tasks) || [];
-  if(!lts.length){ grid.innerHTML='<p style="text-align:center;color:#888;grid-column:1/-1;padding:40px">暂无学习任务数据，请确认Coze工作流已添加学习任务转化节点</p>'; return; }
+  // 兼容两种数据来源：完整图谱(entities.learning_tasks) 或 独立学习任务(learning_tasks)
+  const lts = (currentData && currentData.entities && currentData.entities.learning_tasks)
+           || (currentData && currentData.learning_tasks)
+           || [];
+  if(!lts.length){ grid.innerHTML='<p style="text-align:center;color:#888;grid-column:1/-1;padding:40px">暂无学习任务数据</p>'; return; }
   grid.innerHTML = lts.map(lt => {
     const stepsHtml = (lt.steps||[]).map(s => `
       <div class="lt-step">
@@ -429,6 +432,10 @@ document.addEventListener('drop',e=>{
     graphData = buildGraph(urlData);
     renderGraph();
     document.getElementById('loading').style.display='none';
+    // 如果是学习任务URL（只有learning_tasks，没有entities.tasks），自动切到学习视图
+    if (!urlData.entities || !urlData.entities.tasks || !urlData.entities.tasks.length) {
+      setTimeout(() => showLearningView(), 500);
+    }
     return;
   }
 
