@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>岗位能力知识图谱</title>
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif;background:#0a0e27;color:#e0e0e0;overflow:hidden}
+#container{width:100vw;height:100vh;position:relative}
+svg{width:100%;height:100%}
+#toolbar{position:absolute;top:12px;left:12px;right:12px;display:flex;gap:8px;align-items:center;z-index:10;flex-wrap:wrap}
+#toolbar h1{font-size:18px;font-weight:700;background:linear-gradient(135deg,#64b5f6,#ce93d8);-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-right:auto}
+.btn{padding:6px 12px;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.06);color:#ccc;border-radius:6px;cursor:pointer;font-size:12px;transition:all .2s;white-space:nowrap}
+.btn:hover{background:rgba(255,255,255,.14)}
+.btn.active{background:#3f51b5;border-color:#5c6bc0;color:#fff}
+#searchInput{padding:6px 12px;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.08);color:#e0e0e0;border-radius:6px;font-size:12px;width:180px;outline:none}
+#searchInput:focus{border-color:#5c6bc0}
+#legend{position:absolute;bottom:20px;left:20px;background:rgba(15,18,40,.9);border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:12px 16px;z-index:10;backdrop-filter:blur(10px)}
+#legend .item{display:flex;align-items:center;gap:6px;margin:3px 0;font-size:11px}
+.legend-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
+#detail{position:absolute;top:90px;right:16px;background:rgba(15,18,40,.93);border:1px solid rgba(255,255,255,.15);border-radius:10px;padding:16px;max-width:340px;z-index:10;backdrop-filter:blur(10px);display:none;max-height:65vh;overflow-y:auto}
+#detail h3{font-size:15px;margin-bottom:4px}
+#detail .type-tag{display:inline-block;padding:2px 8px;border-radius:4px;font-size:10px;margin-bottom:6px}
+#detail p{font-size:12px;color:#aaa;line-height:1.5}
+#detail .close-btn{position:absolute;top:6px;right:12px;cursor:pointer;font-size:16px;color:#888}
+#tooltip{position:absolute;pointer-events:none;opacity:0;background:rgba(20,24,50,.95);border:1px solid rgba(255,255,255,.2);border-radius:6px;padding:6px 12px;font-size:12px;transition:opacity .15s;z-index:20;white-space:nowrap}
+#stats{position:absolute;bottom:20px;right:20px;font-size:10px;color:#555;text-align:right;z-index:10}
+#loading{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);z-index:100;font-size:16px;color:#888;display:none}
+</style>
+</head>
+<body>
+<div id="container">
+<div id="toolbar">
+  <h1>🧠 岗位能力知识图谱</h1>
+  <input id="searchInput" type="text" placeholder="搜索节点..." />
+  <button class="btn active" onclick="filterLayer('all')">全部</button>
+  <button class="btn" onclick="filterLayer('task')">任务</button>
+  <button class="btn" onclick="filterLayer('competency')">能力</button>
+  <button class="btn" onclick="filterLayer('skill')">技能</button>
+  <button class="btn" onclick="copyShareURL()">🔗 复制链接</button>
+  <button class="btn" onclick="fitGraph()">🔍 重置</button>
+</div>
+<div id="legend">
+  <div class="item"><span class="legend-dot" style="background:#ff6b6b"></span> 产业链/岗位群/岗位</div>
+  <div class="item"><span class="legend-dot" style="background:#ffa726"></span> 工作任务</div>
+  <div class="item"><span class="legend-dot" style="background:#42a5f5"></span> 能力项</div>
+  <div class="item"><span class="legend-dot" style="background:#66bb6a"></span> 技能/知识点</div>
+</div>
+<div id="detail"><span class="close-btn" onclick="closeDetail()">✕</span><div id="detailContent"></div></div>
+<div id="tooltip"></div>
+<div id="stats"></div>
+<div id="loading">⏳ 加载中...</div>
+<svg id="graph"></svg>
+</div>
+
+<script>
+const COLORS={industry_chain:'#ff6b6b',job_group:'#ff6b6b',job:'#ff6b6b',task:'#ffa726',competency:'#42a5f5',skill:'#66bb6a'};
+const LAYERS={industry_chain:'产业链',job_group:'岗位群',job:'岗位',task:'工作任务',competency:'能力项',skill:'技能/知识点'};
+
+let simulation, svg, g, nodeGroup, labelGroup, linkGroup;
+let graphData={nodes:[],links:[]};
+let currentData=null;
+
+async function decompressFromURL(){
+  const hash=window.location.hash.replace('#','');
+  const params=new URLSearchParams(hash);
+  const d=params.get('d');
+  if(!d)return null;
+  try{
+    let b64=d.replace(/-/g,'+').replace(/_/g,'/');
+    while(b64.length%4)b64+='=';
+    const binary=atob(b64);
+    const bytes=new Uint8Array(binary.length);
+    for(let i=0;i<binary.length;i++)bytes[i]=binary.charCodeAt(i);
+    const ds=new DecompressionStream('deflate');
+    const writer=ds.writable.getWriter();
+    const reader=ds.readable.getReader();
+    writer.write(bytes);writer.close();
+    const chunks=[];let done=false;
+    while(!done){const{value,done:d}=await reader.read();if(d)done=true;if(value)chunks.push(value);}
+    const totalLength=chunks.reduce((a,b)=>a+b.length,0);
+    const result=new Uint8Array(totalLength);let offset=0;
+    for(const chunk of chunks){result.set(chunk,offset);offset+=chunk.length;}
+    return JSON.parse(new TextDecoder().decode(result));
+  }catch(e){console.error(e);return null;}
+}
+
+function buildGraph(data){
+  const nodes=[],links=[],nodeMap=new Map();
+  function addNode(id,label,type,entity){if(!id||nodeMap.has(id))return;nodes.push({id,label,type,entity});nodeMap.set(id,true);}
+  const e=data.entities||{};
+  addNode(e.industry_chain?.name,e.industry_chain?.name,'industry_chain',e.industry_chain);
+  addNode(e.job_group?.name,e.job_group?.name,'job_group',e.job_group);
+  addNode(e.job?.name||data.meta?.job_title,e.job?.name||data.meta?.job_title,'job',e.job);
+  (e.tasks||[]).forEach(t=>addNode(t.id,t.name,'task',t));
+  (e.competencies||[]).forEach(c=>addNode(c.id,c.name,'competency',c));
+  (e.skills||[]).forEach(s=>addNode(s.id,s.name,'skill',s));
+  (data.edges||[]).forEach(edge=>{if(nodeMap.has(edge.source)&&nodeMap.has(edge.target))links.push({source:edge.source,target:edge.target,relation:edge.relation});});
+  const linkedIds=new Set();links.forEach(l=>{linkedIds.add(l.source);linkedIds.add(l.target);});
+  const filteredNodes=nodes.filter(n=>linkedIds.has(n.id)||n.type==='job'||n.type==='job_group'||n.type==='industry_chain');
+  return{nodes:filteredNodes,links};
+}
+
+function renderGraph(){
+  const container=document.getElementById('container');
+  const w=container.clientWidth,h=container.clientHeight;
+  d3.select('#graph').selectAll('*').remove();
+  svg=d3.select('#graph').attr('width',w).attr('height',h);
+  const zoom=d3.zoom().scaleExtent([0.12,4]).on('zoom',e=>g.attr('transform',e.transform));
+  svg.call(zoom);
+  g=svg.append('g');
+  g.append('defs').append('marker').attr('id','arrow').attr('viewBox','0 -5 10 10').attr('refX',22).attr('refY',0).attr('markerWidth',5).attr('markerHeight',5).attr('orient','auto').append('path').attr('d','M0,-5L10,0L0,5').attr('fill','rgba(255,255,255,.15)');
+  linkGroup=g.append('g');
+  linkGroup.selectAll('line').data(graphData.links).join('line').attr('stroke','rgba(255,255,255,.08)').attr('stroke-width',1).attr('marker-end','url(#arrow)');
+  nodeGroup=g.append('g');
+  const nodeElems=nodeGroup.selectAll('g').data(graphData.nodes).join('g').attr('cursor','pointer')
+    .call(d3.drag().on('start',(e,d)=>{if(!e.active)simulation.alphaTarget(.3).restart();d.fx=d.x;d.fy=d.y;}).on('drag',(e,d)=>{d.fx=e.x;d.fy=e.y;}).on('end',(e,d)=>{if(!e.active)simulation.alphaTarget(0);d.fx=null;d.fy=null;}));
+  nodeElems.append('circle').attr('r',d=>d.type==='skill'?6:d.type==='competency'?10:d.type==='task'?14:18).attr('fill',d=>COLORS[d.type]||'#888').attr('stroke','rgba(255,255,255,.25)').attr('stroke-width',1.5);
+  nodeElems.on('click',(e,d)=>showDetail(d)).on('mouseenter',(e,d)=>{d3.select('#tooltip').style('opacity',1).style('left',(e.pageX+12)+'px').style('top',(e.pageY-12)+'px').html(`<strong>${d.label}</strong><br><span style="color:#888;font-size:10px">${LAYERS[d.type]||''}</span>`);}).on('mouseleave',()=>d3.select('#tooltip').style('opacity',0));
+  labelGroup=g.append('g');
+  labelGroup.selectAll('text').data(graphData.nodes).join('text').text(d=>d.label.length>10?d.label.slice(0,10)+'…':d.label).attr('font-size',d=>d.type==='skill'?8:d.type==='task'?10:12).attr('fill','#ccc').attr('text-anchor','middle').attr('dy',d=>d.type==='skill'?-10:d.type==='competency'?-16:-22).attr('pointer-events','none');
+
+  simulation=d3.forceSimulation(graphData.nodes)
+    .force('link',d3.forceLink(graphData.links).id(d=>d.id).distance(60).strength(.4))
+    .force('charge',d3.forceManyBody().strength(-300))
+    .force('center',d3.forceCenter(w/2,h/2))
+    .force('collision',d3.forceCollide().radius(18))
+    .on('tick',()=>{
+      linkGroup.selectAll('line').attr('x1',d=>d.source.x).attr('y1',d=>d.source.y).attr('x2',d=>d.target.x).attr('y2',d=>d.target.y);
+      nodeElems.attr('transform',d=>`translate(${d.x},${d.y})`);
+      labelGroup.selectAll('text').attr('x',d=>d.x).attr('y',d=>d.y);
+    });
+  updateStats();
+}
+
+function showDetail(d){const e=d.entity||{};let extra='';if(e.category)extra+=`<p><b>分类:</b>${e.category}</p>`;if(e.data_type)extra+=`<p><b>数据类型:</b>${e.data_type}</p>`;if(e.level)extra+=`<p><b>等级:</b>${e.level}</p>`;if(e.type&&d.type==='competency')extra+=`<p><b>能力类型:</b>${e.type}</p>`;if(e.type&&d.type==='skill')extra+=`<p><b>技能类型:</b>${e.type}</p>`;if(e.tool_related)extra+=`<p><b>工具:</b>${e.tool_related}</p>`;if(e.difficulty)extra+=`<p><b>难度:</b>${e.difficulty}</p>`;if(e.related_positions?.length)extra+=`<p><b>相关岗位:</b>${e.related_positions.join(', ')}</p>`;document.getElementById('detailContent').innerHTML=`<h3 style="color:${COLORS[d.type]}">${d.label}</h3><span class="type-tag" style="background:${COLORS[d.type]}22;color:${COLORS[d.type]}">${LAYERS[d.type]}</span><p style="margin-top:6px">${e.description||''}</p>${extra}`;document.getElementById('detail').style.display='block';}
+function closeDetail(){document.getElementById('detail').style.display='none';}
+function fitGraph(){svg.transition().duration(750).call(d3.zoom().transform,d3.zoomIdentity);}
+function updateStats(){document.getElementById('stats').innerHTML=`节点:${graphData.nodes.length} | 关系:${graphData.links.length}<br>T:${graphData.nodes.filter(n=>n.type==='task').length} C:${graphData.nodes.filter(n=>n.type==='competency').length} S:${graphData.nodes.filter(n=>n.type==='skill').length}`;}
+function filterLayer(type){document.querySelectorAll('.btn').forEach(b=>b.classList.remove('active'));[...document.querySelectorAll('.btn')].find(b=>b.textContent.includes(type==='all'?'全部':type==='task'?'任务':type==='competency'?'能力':'技能'))?.classList.add('active');const show=type==='all';nodeGroup.selectAll('g').style('opacity',d=>show||d.type===type?1:.1);labelGroup.selectAll('text').style('opacity',d=>show||d.type===type?1:.08);}
+function copyShareURL(){navigator.clipboard.writeText(window.location.href).then(()=>alert('链接已复制！')).catch(()=>prompt('复制此链接:',window.location.href));}
+document.getElementById('searchInput').addEventListener('input',function(){const q=this.value.trim().toLowerCase();if(!q){nodeGroup.selectAll('g').style('opacity',1);labelGroup.selectAll('text').style('opacity',1);return;}nodeGroup.selectAll('g').each(function(d){d3.select(this).style('opacity',d.label.toLowerCase().includes(q)||d.id.toLowerCase().includes(q)?1:.08);});labelGroup.selectAll('text').each(function(d){d3.select(this).style('opacity',d.label.toLowerCase().includes(q)||d.id.toLowerCase().includes(q)?1:.05);});});
+window.addEventListener('resize',()=>{const w=document.getElementById('container').clientWidth,h=document.getElementById('container').clientHeight;svg.attr('width',w).attr('height',h);simulation?.force('center',d3.forceCenter(w/2,h/2));simulation?.alpha(.3).restart();});
+document.addEventListener('dragover',e=>e.preventDefault());
+document.addEventListener('drop',e=>{e.preventDefault();const file=e.dataTransfer.files[0];if(file&&file.name.endsWith('.json')){const reader=new FileReader();reader.onload=ev=>{try{const d=JSON.parse(ev.target.result);currentData=d;graphData=buildGraph(d);renderGraph();}catch(err){alert('JSON解析失败:'+err.message);}};reader.readAsText(file);}});
+
+(async function init(){
+  document.getElementById('loading').style.display='block';
+  const urlData=await decompressFromURL();
+  if(urlData){currentData=urlData;graphData=buildGraph(urlData);renderGraph();document.getElementById('loading').style.display='none';return;}
+  document.getElementById('loading').style.display='none';
+  document.getElementById('stats').textContent='拖入JSON文件或通过URL加载';
+})();
+</script>
+</body>
+</html>

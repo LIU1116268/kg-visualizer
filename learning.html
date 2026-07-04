@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>学习任务卡</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif;background:#0a0e27;color:#e0e0e0;min-height:100vh}
+#header{text-align:center;padding:30px 20px 10px}
+#header h1{font-size:22px;background:linear-gradient(135deg,#64b5f6,#ce93d8);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+#header p{color:#888;font-size:13px;margin-top:6px}
+#header .btn{padding:6px 14px;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.06);color:#ccc;border-radius:6px;cursor:pointer;font-size:12px;margin-top:10px;display:inline-block}
+.lt-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(460px,1fr));gap:22px;max-width:1500px;margin:0 auto;padding:20px}
+.lt-card{background:rgba(20,25,50,.9);border:1px solid rgba(255,255,255,.1);border-radius:14px;padding:24px;transition:all .2s}
+.lt-card:hover{border-color:rgba(100,181,246,.3);box-shadow:0 4px 24px rgba(100,181,246,.08)}
+.lt-card .lt-badge{display:inline-block;padding:3px 10px;border-radius:12px;font-size:11px;margin-bottom:10px;background:rgba(255,167,38,.15);color:#ffa726}
+.lt-card h3{font-size:17px;margin-bottom:4px}
+.lt-card .lt-ref{font-size:11px;color:#555;margin-bottom:10px}
+.lt-card .lt-scenario{font-size:13px;color:#bbb;background:rgba(255,255,255,.04);padding:12px;border-radius:8px;margin-bottom:14px;border-left:3px solid #42a5f5;line-height:1.7}
+.lt-card h4{font-size:13px;color:#64b5f6;margin:16px 0 8px}
+.lt-step{font-size:12px;padding:8px 12px;margin:4px 0;background:rgba(255,255,255,.03);border-radius:6px;display:flex;gap:10px;align-items:flex-start}
+.lt-step .step-num{background:#3f51b5;color:#fff;width:22px;height:22px;border-radius:50%;text-align:center;line-height:22px;font-size:11px;flex-shrink:0}
+.lt-step .step-dur{color:#888;font-size:10px;white-space:nowrap}
+.lt-step .step-tip{color:#ffa726;font-size:10px;margin-top:2px}
+.lt-tags{display:flex;flex-wrap:wrap;gap:4px;margin:6px 0}
+.lt-tags span{font-size:10px;padding:2px 8px;border-radius:10px;background:rgba(102,187,106,.15);color:#66bb6a}
+.lt-safety{font-size:11px;color:#ef5350;padding:6px 10px;background:rgba(239,83,80,.08);border-radius:6px;margin-top:8px}
+.lt-resource{font-size:11px;display:flex;align-items:center;gap:6px;padding:3px 0}
+.lt-resource .res-icon{font-size:14px}
+.lt-assessment{font-size:12px;color:#ce93d8;margin-top:8px;padding:8px 10px;background:rgba(206,147,216,.06);border-radius:6px}
+#loading{text-align:center;color:#888;padding:60px;font-size:16px}
+.placeholder{text-align:center;color:#666;padding:80px 20px}
+.placeholder .icon{font-size:60px;margin-bottom:16px}
+</style>
+</head>
+<body>
+<div id="header">
+  <h1>📋 学习任务卡</h1>
+  <p>基于"以岗定教"理念，将企业工作任务转化为课堂教学实训任务</p>
+  <button class="btn" onclick="copyShareURL()">🔗 复制分享链接</button>
+</div>
+<div class="lt-grid" id="grid"></div>
+<div id="loading">⏳ 加载中...</div>
+
+<script>
+let currentData=null;
+
+async function decompressFromURL(){
+  const hash=window.location.hash.replace('#','');
+  const params=new URLSearchParams(hash);
+  const d=params.get('d');
+  if(!d)return null;
+  try{
+    let b64=d.replace(/-/g,'+').replace(/_/g,'/');
+    while(b64.length%4)b64+='=';
+    const binary=atob(b64);
+    const bytes=new Uint8Array(binary.length);
+    for(let i=0;i<binary.length;i++)bytes[i]=binary.charCodeAt(i);
+    const ds=new DecompressionStream('deflate');
+    const writer=ds.writable.getWriter();
+    const reader=ds.readable.getReader();
+    writer.write(bytes);writer.close();
+    const chunks=[];let done=false;
+    while(!done){const{value,done:d}=await reader.read();if(d)done=true;if(value)chunks.push(value);}
+    const totalLength=chunks.reduce((a,b)=>a+b.length,0);
+    const result=new Uint8Array(totalLength);let offset=0;
+    for(const chunk of chunks){result.set(chunk,offset);offset+=chunk.length;}
+    return JSON.parse(new TextDecoder().decode(result));
+  }catch(e){console.error(e);return null;}
+}
+
+function renderCards(data){
+  document.getElementById('loading').style.display='none';
+  const lts=data.learning_tasks||data.entities?.learning_tasks||[];
+  if(!lts.length){
+    document.getElementById('grid').innerHTML='<div class="placeholder"><div class="icon">📭</div><p>暂无学习任务数据</p></div>';
+    return;
+  }
+  document.getElementById('grid').innerHTML=lts.map(lt=>{
+    const stepsHtml=(lt.steps||[]).map(s=>`
+      <div class="lt-step">
+        <span class="step-num">${s.order}</span>
+        <div style="flex:1">
+          <strong style="font-size:12px">${s.title||''}</strong>
+          <div style="color:#ccc;margin-top:2px">${s.action||''}</div>
+          ${s.tips?`<div class="step-tip">💡 ${s.tips}</div>`:''}
+        </div>
+        <span class="step-dur">${s.duration||''}分钟</span>
+      </div>`).join('');
+
+    const tagsHtml=[...(lt.knowledge_points||[]).map(k=>`<span>📚 ${k}</span>`),...(lt.skill_points||[]).map(k=>`<span>🔧 ${k}</span>`)].join('');
+
+    const resourcesHtml=(lt.resources||[]).map(r=>`<div class="lt-resource"><span class="res-icon">📎</span><strong>${r.name||''}</strong>${r.note?` <span style="color:#888">— ${r.note}</span>`:''}${r.link?` <a href="${r.link}" style="color:#64b5f6;font-size:10px">打开</a>`:''}</div>`).join('');
+
+    const safetyHtml=(lt.safety_points||[]).map(s=>`⚠️ ${s}`).join('<br>');
+
+    return `
+    <div class="lt-card">
+      <span class="lt-badge">🎯 ${lt.work_task_ref||''}</span>
+      <h3>${lt.name||''}</h3>
+      <div class="lt-scenario">${lt.scenario||''}</div>
+      ${lt.objectives?.length?`<h4>🎯 学习目标</h4><ul style="font-size:12px;color:#ccc;padding-left:18px;margin:4px 0">${lt.objectives.map(o=>`<li>${o}</li>`).join('')}</ul>`:''}
+      <h4>📝 任务步骤 (约${(lt.steps||[]).reduce((a,b)=>a+(parseInt(b.duration)||15),0)}分钟)</h4>
+      ${stepsHtml}
+      ${tagsHtml?`<h4>🏷️ 关联知识点/技能点</h4><div class="lt-tags">${tagsHtml}</div>`:''}
+      ${safetyHtml?`<h4>🛡️ 安全要点</h4><div class="lt-safety">${safetyHtml}</div>`:''}
+      ${resourcesHtml?`<h4>📦 推荐实训资源</h4>${resourcesHtml}`:''}
+      ${lt.assessment?`<h4>✅ 考核标准</h4><div class="lt-assessment"><div>方式: ${lt.assessment.method||''}</div><div>标准: ${(lt.assessment.criteria||[]).join(' | ')}</div><div>合格线: ${lt.assessment.pass_line||''}</div></div>`:''}
+    </div>`;
+  }).join('');
+}
+
+function copyShareURL(){navigator.clipboard.writeText(window.location.href).then(()=>alert('链接已复制！')).catch(()=>prompt('复制此链接:',window.location.href));}
+
+(async function init(){
+  const urlData=await decompressFromURL();
+  if(urlData){currentData=urlData;renderCards(urlData);return;}
+  document.getElementById('loading').style.display='none';
+  document.getElementById('grid').innerHTML='<div class="placeholder"><div class="icon">📭</div><p>拖入JSON文件或通过分享链接打开</p></div>';
+})();
+</script>
+</body>
+</html>
