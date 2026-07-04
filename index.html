@@ -103,7 +103,8 @@ svg{width:100%;height:100%}
 <script>
 // ======================== URL数据解压 ========================
 async function decompressFromURL() {
-  const params = new URLSearchParams(window.location.search);
+  const hash = window.location.hash.replace('#','');
+  const params = new URLSearchParams(hash);
   const d = params.get('d');
   if (!d) return null;
 
@@ -245,29 +246,44 @@ function renderGraph() {
     .attr('dy',d => d.type==='skill'?-10:d.type==='competency'?-16:-22)
     .attr('pointer-events','none');
 
+  // 分层布局：按层级固定在x轴的不同位置，从左到右
+  const layerX = {
+    industry_chain: w * 0.08,
+    job_group: w * 0.15,
+    job: w * 0.22,
+    task: w * 0.38,
+    competency: w * 0.58,
+    skill: w * 0.78
+  };
+
   simulation = d3.forceSimulation(graphData.nodes)
     .force('link',d3.forceLink(graphData.links).id(d=>d.id)
       .distance(d=>{
-        if(d.source.type==='competency'&&d.target.type==='skill')return 50;
-        if(d.source.type==='task'&&d.target.type==='competency')return 65;
-        return 80;
+        if(d.source.type==='competency'&&d.target.type==='skill')return 40;
+        if(d.source.type==='task'&&d.target.type==='competency')return 55;
+        if(d.source.type==='job'&&d.target.type==='task')return 70;
+        return 60;
       })
-      .strength(d=>d.source.type==='competency'&&d.target.type==='skill'?.8:.5)
+      .strength(.7)
     )
     .force('charge',d3.forceManyBody().strength(d=>{
-      if(d.type==='skill')return -80;
-      if(d.type==='competency')return -200;
-      if(d.type==='task')return -300;
-      return -400;
+      if(d.type==='skill')return -60;
+      if(d.type==='competency')return -150;
+      if(d.type==='task')return -200;
+      return -100;
     }))
-    .force('center',d3.forceCenter(w/2,h/2))
     .force('collision',d3.forceCollide().radius(d=>{
-      if(d.type==='skill')return 12;
-      if(d.type==='competency')return 22;
-      return 35;
+      if(d.type==='skill')return 10;
+      if(d.type==='competency')return 18;
+      return 28;
     }))
-    .force('x',d3.forceX(w/2).strength(.03))
-    .force('y',d3.forceY(h/2).strength(.03))
+    .force('x',d3.forceX(d=>layerX[d.type]||w/2).strength(d=>{
+      // 左侧顶层节点锚定力度强，右侧下层节点力度弱
+      if(d.type==='industry_chain'||d.type==='job_group'||d.type==='job')return .5;
+      if(d.type==='task')return .3;
+      return .15;
+    }))
+    .force('y',d3.forceY(h/2).strength(.05))
     .on('tick',() => {
       linkGroup.selectAll('line').attr('x1',d=>d.source.x).attr('y1',d=>d.source.y).attr('x2',d=>d.target.x).attr('y2',d=>d.target.y);
       nodeElems.attr('transform',d=>`translate(${d.x},${d.y})`);
