@@ -30,6 +30,31 @@ svg{width:100%;height:100%}
 #loading{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);z-index:100;font-size:16px;color:#888;display:none}
 #urlbox{position:absolute;bottom:60px;right:20px;z-index:10;display:none}
 #urlbox input{padding:6px 10px;border:1px solid rgba(255,255,255,.2);background:rgba(15,18,40,.9);color:#64b5f6;border-radius:6px;font-size:11px;width:300px;outline:none}
+/* 学习任务卡 */
+#learningView{position:absolute;top:0;left:0;right:0;bottom:0;overflow-y:auto;z-index:30;display:none;padding:80px 20px 40px;background:rgba(5,8,20,.97)}
+#learningView .lt-header{text-align:center;margin-bottom:30px}
+#learningView .lt-header h2{font-size:22px;background:linear-gradient(135deg,#64b5f6,#ce93d8);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+#learningView .lt-header p{color:#888;font-size:13px;margin-top:4px}
+.lt-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(420px,1fr));gap:20px;max-width:1400px;margin:0 auto}
+.lt-card{background:rgba(20,25,50,.9);border:1px solid rgba(255,255,255,.1);border-radius:14px;padding:22px;transition:all .2s;position:relative}
+.lt-card:hover{border-color:rgba(100,181,246,.4);box-shadow:0 4px 24px rgba(100,181,246,.1)}
+.lt-card .lt-badge{display:inline-block;padding:3px 10px;border-radius:12px;font-size:11px;margin-bottom:10px}
+.lt-card h3{font-size:16px;margin-bottom:4px}
+.lt-card .lt-ref{font-size:11px;color:#666;margin-bottom:8px}
+.lt-card .lt-scenario{font-size:13px;color:#bbb;background:rgba(255,255,255,.04);padding:12px;border-radius:8px;margin-bottom:12px;border-left:3px solid #42a5f5;line-height:1.7}
+.lt-card h4{font-size:13px;color:#64b5f6;margin:14px 0 6px}
+.lt-step{font-size:12px;padding:8px 12px;margin:4px 0;background:rgba(255,255,255,.03);border-radius:6px;display:flex;gap:10px;align-items:flex-start}
+.lt-step .step-num{background:#3f51b5;color:#fff;width:22px;height:22px;border-radius:50%;text-align:center;line-height:22px;font-size:11px;flex-shrink:0}
+.lt-step .step-dur{color:#888;font-size:10px;white-space:nowrap}
+.lt-step .step-tip{color:#ffa726;font-size:10px;margin-top:2px}
+.lt-tags{display:flex;flex-wrap:wrap;gap:4px;margin:8px 0}
+.lt-tags span{font-size:10px;padding:2px 8px;border-radius:10px;background:rgba(102,187,106,.15);color:#66bb6a}
+.lt-safety{font-size:11px;color:#ef5350;padding:6px 10px;background:rgba(239,83,80,.08);border-radius:6px;margin-top:8px}
+.lt-resource{font-size:11px;display:flex;align-items:center;gap:6px;padding:3px 0}
+.lt-resource .res-icon{font-size:14px}
+.lt-assessment{font-size:12px;color:#ce93d8;margin-top:8px;padding:8px 10px;background:rgba(206,147,216,.06);border-radius:6px}
+#closeLearning{position:fixed;top:16px;right:20px;z-index:31;padding:8px 16px;border:1px solid rgba(255,255,255,.2);background:rgba(15,18,40,.9);color:#ccc;border-radius:8px;cursor:pointer;font-size:13px}
+#closeLearning:hover{background:rgba(255,255,255,.14)}
 </style>
 </head>
 <body>
@@ -41,6 +66,7 @@ svg{width:100%;height:100%}
   <button class="btn" onclick="filterLayer('task')">任务</button>
   <button class="btn" onclick="filterLayer('competency')">能力</button>
   <button class="btn" onclick="filterLayer('skill')">技能</button>
+  <button class="btn" onclick="showLearningView()">📋 学习任务卡</button>
   <button class="btn" onclick="copyShareURL()">🔗 复制分享链接</button>
   <button class="btn" onclick="fitGraph()">🔍 重置</button>
 </div>
@@ -61,6 +87,17 @@ svg{width:100%;height:100%}
 <div id="stats"></div>
 <div id="loading">⏳ 加载图谱数据...</div>
 <svg id="graph"></svg>
+
+<!-- 学习任务卡视图 -->
+<button id="closeLearning" onclick="showGraphView()">✕ 返回图谱</button>
+<div id="learningView">
+  <div class="lt-header">
+    <h2>📋 学习任务卡</h2>
+    <p>基于“以岗定教”理念，将企业工作任务转化为课堂教学实训任务</p>
+  </div>
+  <div class="lt-grid" id="learningGrid"></div>
+</div>
+
 </div>
 
 <script>
@@ -263,7 +300,9 @@ function showDetail(d) {
 function closeDetail(){document.getElementById('detail').style.display='none';}
 function fitGraph(){svg.transition().duration(750).call(d3.zoom().transform,d3.zoomIdentity);}
 function updateStats(){
-  document.getElementById('stats').innerHTML = `节点:${graphData.nodes.length} | 关系:${graphData.links.length}<br>T:${graphData.nodes.filter(n=>n.type==='task').length} C:${graphData.nodes.filter(n=>n.type==='competency').length} S:${graphData.nodes.filter(n=>n.type==='skill').length}`;
+  const ltCount = (currentData&&currentData.entities&&currentData.entities.learning_tasks||[]).length;
+  const ltInfo = ltCount ? ` | L:${ltCount}` : '';
+  document.getElementById('stats').innerHTML = `节点:${graphData.nodes.length} | 关系:${graphData.links.length}<br>T:${graphData.nodes.filter(n=>n.type==='task').length} C:${graphData.nodes.filter(n=>n.type==='competency').length} S:${graphData.nodes.filter(n=>n.type==='skill').length}${ltInfo}`;
 }
 
 function filterLayer(type){
@@ -275,6 +314,62 @@ function filterLayer(type){
 }
 function copyShareURL(){
   navigator.clipboard.writeText(window.location.href).then(()=>alert('链接已复制！')).catch(()=>prompt('复制此链接:',window.location.href));
+}
+
+function showLearningView(){
+  document.getElementById('learningView').style.display='block';
+  document.getElementById('closeLearning').style.display='block';
+  document.querySelector('#toolbar').style.opacity='.3';
+  renderLearningCards();
+}
+function showGraphView(){
+  document.getElementById('learningView').style.display='none';
+  document.getElementById('closeLearning').style.display='none';
+  document.querySelector('#toolbar').style.opacity='1';
+}
+function renderLearningCards(){
+  const grid = document.getElementById('learningGrid');
+  const lts = (currentData && currentData.entities && currentData.entities.learning_tasks) || [];
+  if(!lts.length){ grid.innerHTML='<p style="text-align:center;color:#888;grid-column:1/-1;padding:40px">暂无学习任务数据，请确认Coze工作流已添加学习任务转化节点</p>'; return; }
+  grid.innerHTML = lts.map(lt => {
+    const stepsHtml = (lt.steps||[]).map(s => `
+      <div class="lt-step">
+        <span class="step-num">${s.order}</span>
+        <div style="flex:1">
+          <strong style="font-size:12px">${s.title||''}</strong>
+          <div style="color:#ccc;margin-top:2px">${s.action||''}</div>
+          ${s.tips?`<div class="step-tip">💡 ${s.tips}</div>`:''}
+        </div>
+        <span class="step-dur">${s.duration||''}</span>
+      </div>`).join('');
+
+    const tagsHtml = [
+      ...(lt.knowledge_points||[]).map(k=>`<span>📚 ${k}</span>`),
+      ...(lt.skill_points||[]).map(k=>`<span>🔧 ${k}</span>`)
+    ].join('');
+
+    const resourcesHtml = (lt.resources||[]).map(r=>{
+      const icons={微课视频:'🎬',实训手册:'📖',仿真软件:'💻',课件PPT:'📊',实训指导书:'📘'};
+      return `<div class="lt-resource"><span class="res-icon">${icons[r.type]||'📎'}</span>${r.name}${r.note?` <span style="color:#888">— ${r.note}</span>`:''}</div>`;
+    }).join('');
+
+    const safetyHtml = (lt.safety_points||[]).map(s=>`⚠️ ${s}`).join('<br>');
+
+    return `
+    <div class="lt-card">
+      <span class="lt-badge" style="background:rgba(255,167,38,.15);color:#ffa726">🎯 学习任务</span>
+      <h3>${lt.name||''}</h3>
+      <div class="lt-ref">关联工作任务: ${lt.work_task_ref||''}</div>
+      <div class="lt-scenario">${lt.scenario||''}</div>
+      ${lt.objectives&&lt.objectives.length?`<h4>🎯 学习目标</h4><ul style="font-size:12px;color:#ccc;padding-left:18px;margin:4px 0">${lt.objectives.map(o=>`<li>${o}</li>`).join('')}</ul>`:''}
+      <h4>📝 任务步骤 (总时长约${lt.steps&&lt.steps.length?lt.steps.reduce((a,b)=>a+(parseInt(b.duration)||15),0):0}分钟)</h4>
+      ${stepsHtml}
+      ${tagsHtml?`<h4>🏷️ 关联知识点/技能点</h4><div class="lt-tags">${tagsHtml}</div>`:''}
+      ${safetyHtml?`<h4>🛡️ 安全要点</h4><div class="lt-safety">${safetyHtml}</div>`:''}
+      ${resourcesHtml?`<h4>📦 推荐实训资源</h4>${resourcesHtml}`:''}
+      ${lt.assessment?`<h4>✅ 考核标准</h4><div class="lt-assessment"><div style="margin-bottom:2px">方式: ${lt.assessment.method||''}</div><div>标准: ${(lt.assessment.criteria||[]).join(' | ')}</div><div style="margin-top:2px">合格线: ${lt.assessment.pass_line||''}</div></div>`:''}
+    </div>`;
+  }).join('');
 }
 
 document.getElementById('searchInput').addEventListener('input',function(){
