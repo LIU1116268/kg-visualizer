@@ -58,26 +58,36 @@ h1 {
 }
 
 /* ── Canvas ── */
-.main { position:relative; overflow:hidden; }
+.main { position:relative; overflow:hidden; min-height:0; }
 .canvas-wrap {
-  position:absolute; inset:0; overflow:auto; padding:26px 28px 40px;
+  position:absolute; inset:0; overflow:hidden; cursor: grab;
+  user-select: none; -webkit-user-select: none;
 }
-.canvas-wrap::-webkit-scrollbar { height:10px; width:10px; }
-.canvas-wrap::-webkit-scrollbar-thumb { background:#25304b; border-radius:999px; }
-.canvas-wrap::-webkit-scrollbar-track { background:#0a1024; }
-svg {
-  display:block; min-width:100%;
-  filter:drop-shadow(0 14px 35px rgba(0,0,0,.28));
-}
+.canvas-wrap:active { cursor: grabbing; }
+
+svg { display:block; width:100%; height:100%; }
 
 /* ── SVG Elements ── */
 .edge { fill:none; stroke:rgba(148,163,184,.28); stroke-width:1.4; }
 .edge.dim { opacity:.08; }
 .node { cursor:pointer; transition:opacity .2s; }
-.node-card { rx:16; ry:16; fill:rgba(15,23,42,.86); stroke:rgba(148,163,184,.24); stroke-width:1; }
+.node-card { 
+  rx:16; ry:16; 
+  fill:rgba(15,23,42,.86); 
+  stroke:rgba(148,163,184,.24); 
+  stroke-width:1; 
+  filter: drop-shadow(0 6px 16px rgba(0,0,0,.28));
+}
 .node:hover .node-card { stroke:rgba(96,165,250,.78); filter:url(#softGlow); }
-.node-title { font-size:13px; font-weight:700; fill:#edf5ff; pointer-events:none; }
-.node-meta { font-size:10px; fill:#8ea3bd; pointer-events:none; }
+
+/* 强制文本进行精确几何抗锯齿渲染 */
+.node-title, .node-meta, .column-title {
+  text-rendering: geometricPrecision;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+.node-title { font-size:13px; font-weight:700; fill:#edf5ff; pointer-events:none; letter-spacing: normal !important; }
+.node-meta { font-size:10px; fill:#8ea3bd; pointer-events:none; letter-spacing: normal !important; }
 .node-dot { stroke:rgba(255,255,255,.42); stroke-width:1; }
 .node.dim { opacity:.12; }
 .node.highlight .node-card { stroke:#facc15; stroke-width:2; filter:url(#yellowGlow); }
@@ -89,7 +99,7 @@ svg {
   position:absolute; left:24px; bottom:22px;
   background:rgba(15,23,42,.74); border:1px solid var(--border); border-radius:16px;
   padding:12px 14px; display:grid; gap:7px;
-  box-shadow:0 20px 48px rgba(0,0,0,.28); backdrop-filter:blur(16px); font-size:12px;
+  box-shadow:0 20px 48px rgba(0,0,0,.28); backdrop-filter:blur(16px); font-size:12px; pointer-events:none;
 }
 .stat-row { display:flex; align-items:center; gap:8px; color:#cbd5e1; }
 .legend-dot { width:10px; height:10px; border-radius:999px; flex-shrink:0; }
@@ -97,7 +107,7 @@ svg {
   position:absolute; right:24px; bottom:22px;
   background:rgba(15,23,42,.74); border:1px solid var(--border); border-radius:16px;
   padding:12px 14px; color:#9fb2cc; font-size:12px; line-height:1.6;
-  backdrop-filter:blur(16px); text-align:right;
+  backdrop-filter:blur(16px); text-align:right; pointer-events:none;
 }
 .detail {
   position:absolute; top:24px; right:24px;
@@ -137,13 +147,12 @@ svg {
 @media(max-width:900px){
   .subtitle { margin-left:0; } .toolbar { width:100%; margin-left:0; }
   .input { flex:1; width:180px; } .header { padding:14px; }
-  .canvas-wrap { padding:16px; } .pill { display:none; }
+  .pill { display:none; }
 }
 </style>
 </head>
 <body>
 <div id="app">
-  <!-- ═══ Header ═══ -->
   <header class="header">
     <div class="topline">
       <div class="logo">KG</div>
@@ -154,6 +163,7 @@ svg {
       <div class="toolbar">
         <input class="input" id="searchInput" placeholder="搜索任务 / 能力 / 技能…" />
         <button class="btn active" data-filter="all">全部</button>
+        <button class="btn" data-filter="job_specialization">方向</button>
         <button class="btn" data-filter="task">任务</button>
         <button class="btn" data-filter="competency">能力</button>
         <button class="btn" data-filter="skill">技能</button>
@@ -163,28 +173,24 @@ svg {
     </div>
   </header>
 
-  <!-- ═══ Main ═══ -->
   <main class="main">
     <div class="canvas-wrap" id="wrap">
-      <svg id="graph"></svg>
+      <svg id="graph">
+        <g id="viewport"></g>
+      </svg>
     </div>
 
-    <!-- 详情面板 -->
     <aside class="detail" id="detail">
       <button class="close-btn" id="closeDetail">×</button>
       <div id="detailContent"></div>
     </aside>
 
-    <!-- 统计 -->
     <div class="stats" id="stats"></div>
 
-    <!-- 数据来源标识 -->
     <div class="pill" id="sourcePill">拖入 JSON 文件<br/>或通过分享链接打开</div>
 
-    <!-- Toast -->
     <div class="toast" id="toast">已复制</div>
 
-    <!-- 空状态（初始加载前） -->
     <div class="empty-state" id="emptyState">
       <div>
         <div style="font-size:56px;margin-bottom:14px">📊</div>
@@ -197,37 +203,43 @@ svg {
 
 <script>
 // ═══════════════════════════════════════════
-// 1. 常量 & 类型定义
+// 1. 内嵌示例数据 (sample_graph.json)
 // ═══════════════════════════════════════════
-const TYPE_INFO = {
-  industry_chain: { label:'产业链',      color:'#fb7185' },
-  job_group:      { label:'岗位群',      color:'#fb7185' },
-  job:            { label:'目标岗位',    color:'#fb7185' },
-  task:           { label:'工作任务',    color:'#f59e0b' },
-  competency:     { label:'能力项',      color:'#38bdf8' },
-  skill:          { label:'技能/知识点', color:'#22c55e' }
-};
-const ORDER = ['industry_chain','job_group','job','task','competency','skill'];
+const EMBEDDED_DATA = {"meta":{"job_title":"AI数据标注师","created_at":"2025-06-27T12:00:00","schema_version":"1.0","statistics":{"task_count":10,"competency_count":7,"skill_count":17,"edge_count":45},"warnings":{"orphan_tasks":[],"orphan_competencies":[]}},"entities":{"industry_chain":{"name":"人工智能基础数据服务产业","description":"为AI模型训练提供高质量标注数据的上游支撑产业，涵盖数据采集、标注、质检、管理等环节"},"job_group":{"name":"人工智能应用技术","description":"涵盖数据标注、模型训练、AI应用部署、运维等技术岗位的专业群"},"job":{"name":"AI数据标注师","summary":"使用专业标注工具对图像、文本、语音等数据进行分类、标注、质检，为AI模型训练提供高质量数据集","career_level":"初级/中级/高级","related_positions":["数据标注员","AI训练师","数据质量工程师","标注项目经理"]},"tasks":[{"id":"T001","name":"图像分类标注","description":"对图像进行整体类别标签分配，区分物体、场景、人物等类别","category":"数据标注","data_type":"图像","level":"初级"},{"id":"T002","name":"目标检测框标注","description":"在图像上绘制2D矩形边界框，精确框选目标物体并赋予正确的类别标签","category":"数据标注","data_type":"图像","level":"初级"},{"id":"T003","name":"图像语义分割标注","description":"在图像上进行像素级语义分割标注，精确勾画目标区域的闭合多边形边界，常用于自动驾驶和医学影像","category":"数据标注","data_type":"图像","level":"中级"},{"id":"T004","name":"文本实体关系标注","description":"对文本中的命名实体（NER）、实体间关系、情感倾向、意图等进行分类和序列标注","category":"数据标注","data_type":"文本","level":"初级"},{"id":"T005","name":"语音转写校对标注","description":"对ASR转写结果进行校对修正，标注说话人分离、情感语调、非语言声音事件等信息","category":"数据标注","data_type":"语音","level":"中级"},{"id":"T006","name":"3D点云目标标注","description":"在激光雷达点云数据中进行3D边界框标注，用于自动驾驶感知模型训练","category":"数据标注","data_type":"3D点云","level":"高级"},{"id":"T007","name":"数据清洗与预处理","description":"筛选剔除低质量、重复、异常数据，进行格式统一、去噪和标准化转换","category":"数据清洗","data_type":"多模态","level":"初级"},{"id":"T008","name":"标注数据质量校验","description":"对标注结果进行多维度质量评估，计算准确率、一致性指标（IoU/Kappa），识别问题批次并组织返修","category":"质量校验","data_type":"多模态","level":"中级"},{"id":"T009","name":"数据集版本管理","description":"使用数据版本管理工具进行数据集的版本控制、变更追踪与发布管理","category":"数据管理","data_type":"多模态","level":"中级"},{"id":"T010","name":"标注规范编写与迭代","description":"根据项目需求编写标注规范文档，在项目推进中持续迭代优化标注标准与流程","category":"数据管理","data_type":"多模态","level":"高级"}],"competencies":[{"id":"C001","name":"图像数据标注执行能力","description":"能熟练使用主流标注工具对图像数据进行分类、检测框、多边形分割等多类型标注，确保标注精度达标","level":"初级","related_task_ids":["T001","T002","T003"],"type":"专业能力"},{"id":"C002","name":"文本与语音数据处理能力","description":"能对自然语言文本和语音数据进行实体识别、关系抽取、情感标注等标注任务，理解NLP和ASR基本概念","level":"初级","related_task_ids":["T004","T005"],"type":"专业能力"},{"id":"C003","name":"3D与多模态数据标注能力","description":"具备处理点云、视频等复杂模态数据的标注能力，理解传感器原理和3D坐标系统","level":"高级","related_task_ids":["T006"],"type":"专业能力"},{"id":"C004","name":"标注质量评估与管控能力","description":"能设计质检方案，对标注数据进行多维度质量评估，识别质量问题根因并推动改进","level":"中级","related_task_ids":["T008"],"type":"方法能力"},{"id":"C005","name":"数据治理与管理能力","description":"能进行数据清洗、版本管理、标注规范制定和数据集全生命周期管理","level":"中级","related_task_ids":["T007","T009","T010"],"type":"方法能力"},{"id":"C006","name":"标注工具应用与调优能力","description":"熟练配置和使用多种标注工具，能根据项目需求调整工具参数、界面和自动化规则","level":"初级","related_task_ids":["T001","T002","T004","T006"],"type":"专业能力"},{"id":"C007","name":"团队协作与需求沟通能力","description":"能清晰理解标注需求，与算法工程师、产品经理有效沟通，协调多标注员协作完成大规模标注项目","level":"中级","related_task_ids":["T008","T010"],"type":"社会能力"}],"skills":[{"id":"S001","name":"CVAT图像分类任务创建与标注","description":"在CVAT平台创建图像分类任务，正确配置标签体系和属性，按规范完成单标签/多标签分类标注","type":"工具操作","related_competency_ids":["C001"],"tool_related":"CVAT","difficulty":"基础"},{"id":"S002","name":"矩形边界框（BBox）标注规范","description":"掌握目标检测标注规范：框选规则、遮挡处理策略、边界判定准则、小目标标注技巧","type":"硬技能","related_competency_ids":["C001"],"tool_related":"通用","difficulty":"基础"},{"id":"S003","name":"多边形（Polygon）语义分割标注","description":"使用CVAT/Labelme进行像素级多边形标注，合理控制节点密度、边贴合度与标注效率的平衡","type":"硬技能","related_competency_ids":["C001"],"tool_related":"CVAT","difficulty":"中级"},{"id":"S004","name":"Label Studio配置与管理","description":"配置Label Studio标注界面、标签模板、快捷键方案和数据导入导出流程","type":"工具操作","related_competency_ids":["C006"],"tool_related":"Label Studio","difficulty":"基础"},{"id":"S005","name":"doccano文本标注操作","description":"使用doccano进行NER命名实体识别标注、文本分类标注和序列标注（词性标注等）","type":"工具操作","related_competency_ids":["C002"],"tool_related":"doccano","difficulty":"基础"},{"id":"S006","name":"实体关系标注规范","description":"理解实体类型定义体系、关系类型层次、标注一致性要求，掌握嵌套实体和重叠关系的标注策略","type":"硬技能","related_competency_ids":["C002"],"tool_related":"通用","difficulty":"基础"},{"id":"S007","name":"语音标注工具操作","description":"使用Praat/Audacity等音频工具进行语音段切分、转写校对和声学事件标注","type":"工具操作","related_competency_ids":["C002"],"tool_related":"通用","difficulty":"中级"},{"id":"S008","name":"点云数据标注基础理论","description":"理解激光雷达点云采集原理、3D坐标系统（世界坐标/相机坐标/像素坐标转换）、KITTI/ONCE等主流数据集标注标准","type":"理论知识","related_competency_ids":["C003"],"tool_related":"通用","difficulty":"进阶"},{"id":"S009","name":"IoU与Kappa一致性计算","description":"能计算交并比（IoU）和Cohen's Kappa系数评估标注结果与Ground Truth的一致性","type":"硬技能","related_competency_ids":["C004"],"tool_related":"通用","difficulty":"进阶"},{"id":"S010","name":"标注质量抽样检验方法","description":"掌握随机抽样、分层抽样等质检抽样策略，能设计质检方案并分类整理质量问题","type":"硬技能","related_competency_ids":["C004"],"tool_related":"通用","difficulty":"进阶"},{"id":"S011","name":"Python数据清洗脚本编写","description":"能使用Python/Pandas编写基础的数据去重、格式校验、缺失值检测和异常值标记脚本","type":"硬技能","related_competency_ids":["C005"],"tool_related":"通用","difficulty":"基础"},{"id":"S012","name":"数据版本管理工具使用","description":"使用DVC（Data Version Control）或Git LFS进行大规模数据集的版本控制和变更追踪","type":"工具操作","related_competency_ids":["C005"],"tool_related":"通用","difficulty":"进阶"},{"id":"S013","name":"标注规范文档编写能力","description":"能编写结构清晰、可操作性强、覆盖边界情况和特殊案例的标注规范文档","type":"软技能","related_competency_ids":["C005","C007"],"tool_related":"None","difficulty":"中级"},{"id":"S014","name":"Labelme标注与格式转换","description":"使用Labelme进行多边形标注、关键点标注，并能将标注结果转换为COCO/YOLO/Pascal VOC等主流格式","type":"工具操作","related_competency_ids":["C001","C006"],"tool_related":"Labelme","difficulty":"基础"},{"id":"S015","name":"CVAT自动标注规则配置","description":"配置CVAT的自动标注规则和基于预训练模型的预标注流水线，提升标注效率","type":"工具操作","related_competency_ids":["C006"],"tool_related":"CVAT","difficulty":"进阶"},{"id":"S016","name":"技术需求文档理解能力","description":"能从算法工程师的需求文档中准确提取标注对象定义、精度指标和验收标准","type":"软技能","related_competency_ids":["C007"],"tool_related":"None","difficulty":"基础"},{"id":"S017","name":"多标注员任务协调管理","description":"能合理分配标注任务、跟踪标注进度、协调多人标注的一致性，处理标注分歧","type":"软技能","related_competency_ids":["C007"],"tool_related":"通用","difficulty":"进级"}]},"edges":[{"source":"人工智能基础数据服务产业","target":"人工智能应用技术","relation":"BELONGS_TO","label":"归属"},{"source":"人工智能应用技术","target":"AI数据标注师","relation":"CONTAINS","label":"包含"},{"source":"AI数据标注师","target":"T001","relation":"HAS_TASK","label":"执行任务"},{"source":"AI数据标注师","target":"T002","relation":"HAS_TASK","label":"执行任务"},{"source":"AI数据标注师","target":"T003","relation":"HAS_TASK","label":"执行任务"},{"source":"AI数据标注师","target":"T004","relation":"HAS_TASK","label":"执行任务"},{"source":"AI数据标注师","target":"T005","relation":"HAS_TASK","label":"执行任务"},{"source":"AI数据标注师","target":"T006","relation":"HAS_TASK","label":"执行任务"},{"source":"AI数据标注师","target":"T007","relation":"HAS_TASK","label":"执行任务"},{"source":"AI数据标注师","target":"T008","relation":"HAS_TASK","label":"执行任务"},{"source":"AI数据标注师","target":"T009","relation":"HAS_TASK","label":"执行任务"},{"source":"AI数据标注师","target":"T010","relation":"HAS_TASK","label":"执行任务"},{"source":"T001","target":"C001","relation":"REQUIRES_COMPETENCY","label":"需要能力"},{"source":"T002","target":"C001","relation":"REQUIRES_COMPETENCY","label":"需要能力"},{"source":"T003","target":"C001","relation":"REQUIRES_COMPETENCY","label":"需要能力"},{"source":"T001","target":"C006","relation":"REQUIRES_COMPETENCY","label":"需要能力"},{"source":"T002","target":"C006","relation":"REQUIRES_COMPETENCY","label":"需要能力"},{"source":"T004","target":"C002","relation":"REQUIRES_COMPETENCY","label":"需要能力"},{"source":"T005","target":"C002","relation":"REQUIRES_COMPETENCY","label":"需要能力"},{"source":"T004","target":"C006","relation":"REQUIRES_COMPETENCY","label":"需要能力"},{"source":"T006","target":"C003","relation":"REQUIRES_COMPETENCY","label":"需要能力"},{"source":"T006","target":"C006","relation":"REQUIRES_COMPETENCY","label":"需要能力"},{"source":"T008","target":"C004","relation":"REQUIRES_COMPETENCY","label":"需要能力"},{"source":"T007","target":"C005","relation":"REQUIRES_COMPETENCY","label":"需要能力"},{"source":"T009","target":"C005","relation":"REQUIRES_COMPETENCY","label":"需要能力"},{"source":"T010","target":"C005","relation":"REQUIRES_COMPETENCY","label":"需要能力"},{"source":"T008","target":"C007","relation":"REQUIRES_COMPETENCY","label":"需要能力"},{"source":"T010","target":"C007","relation":"REQUIRES_COMPETENCY","label":"需要能力"},{"source":"C001","target":"S001","relation":"REQUIRES_SKILL","label":"需要技能"},{"source":"C001","target":"S002","relation":"REQUIRES_SKILL","label":"需要技能"},{"source":"C001","target":"S003","relation":"REQUIRES_SKILL","label":"需要技能"},{"source":"C001","target":"S014","relation":"REQUIRES_SKILL","label":"需要技能"},{"source":"C002","target":"S005","relation":"REQUIRES_SKILL","label":"需要技能"},{"source":"C002","target":"S006","relation":"REQUIRES_SKILL","label":"需要技能"},{"source":"C002","target":"S007","relation":"REQUIRES_SKILL","label":"需要技能"},{"source":"C003","target":"S008","relation":"REQUIRES_SKILL","label":"需要技能"},{"source":"C004","target":"S009","relation":"REQUIRES_SKILL","label":"需要技能"},{"source":"C004","target":"S010","relation":"REQUIRES_SKILL","label":"需要技能"},{"source":"C005","target":"S011","relation":"REQUIRES_SKILL","label":"需要技能"},{"source":"C005","target":"S012","relation":"REQUIRES_SKILL","label":"需要技能"},{"source":"C005","target":"S013","relation":"REQUIRES_SKILL","label":"需要技能"},{"source":"C006","target":"S004","relation":"REQUIRES_SKILL","label":"需要技能"},{"source":"C006","target":"S014","relation":"REQUIRES_SKILL","label":"需要技能"},{"source":"C006","target":"S015","relation":"REQUIRES_SKILL","label":"需要技能"},{"source":"C007","target":"S013","relation":"REQUIRES_SKILL","label":"需要技能"},{"source":"C007","target":"S016","relation":"REQUIRES_SKILL","label":"需要技能"},{"source":"C007","target":"S017","relation":"REQUIRES_SKILL","label":"需要技能"}]};
 
 // ═══════════════════════════════════════════
-// 2. 状态
+// 2. 常量 & 交互缩放状态管理
 // ═══════════════════════════════════════════
+const TYPE_INFO = {
+  industry_chain:    { label:'产业链',      color:'#fb7185' },
+  job_group:         { label:'岗位群',      color:'#fb7185' },
+  job:               { label:'目标岗位',    color:'#fb7185' },
+  job_specialization:{ label:'岗位方向',    color:'#a78bfa' },
+  task:              { label:'工作任务',    color:'#f59e0b' },
+  competency:        { label:'能力项',      color:'#38bdf8' },
+  skill:             { label:'技能/知识点', color:'#22c55e' }
+};
+const ORDER = ['industry_chain','job_group','job','job_specialization','task','competency','skill'];
+
 let graph = { nodes:[], links:[], meta:{} };
 let layout = { nodes:new Map(), w:1500, h:900 };
 let activeFilter = 'all';
 let searchText = '';
 
+// 交互平移缩放核心状态
+let transformState = { x: 0, y: 0, scale: 1 };
+let isDragging = false;
+let startPan = { x: 0, y: 0 };
+
 // ═══════════════════════════════════════════
 // 3. 工具函数
 // ═══════════════════════════════════════════
-function cleanText(s) {
-  return String(s??'').replace(/([一-鿿])\s+(?=[一-鿿])/g,'$1').replace(/\s+/g,' ').trim();
-}
+function cleanText(s) { return String(s??'').replace(/([一-鿿])\s+(?=[一-鿿])/g,'$1').replace(/\s+/g,' ').trim(); }
 function canon(s) { return String(s??'').replace(/\s+/g,'').trim(); }
 function truncate(s, n) { s = cleanText(s); return s.length > n ? s.slice(0, n) + '…' : s; }
 
 // ═══════════════════════════════════════════
-// 4. URL 解压 (兼容 deflate + 裸 base64)
+// 4. URL 数据解密
 // ═══════════════════════════════════════════
 async function decodeURLData() {
   const hash = window.location.hash.replace('#','');
@@ -243,96 +255,65 @@ async function decodeURLData() {
     for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
     return bytes;
   }
-
-  function parseRaw(t) {
-    const bytes = tokenToBytes(t);
-    return JSON.parse(new TextDecoder().decode(bytes));
-  }
-
-  // ?j= 裸 base64 (讯飞星辰兼容)
   if (params.get('j')) {
-    try { return parseRaw(params.get('j')); }
-    catch(e) { console.error(e); alert('URL 数据解析失败，请确认链接完整。'); return null; }
+    try { return JSON.parse(new TextDecoder().decode(tokenToBytes(params.get('j')))); } catch(e) { return null; }
   }
-  // ?d= deflate 压缩
   try {
     const bytes = tokenToBytes(token);
     const ds = new DecompressionStream('deflate');
-    const writer = ds.writable.getWriter();
-    const reader = ds.readable.getReader();
+    const writer = ds.writable.getWriter(); const reader = ds.readable.getReader();
     writer.write(bytes); writer.close();
     const chunks = [];
     while (true) { const {value, done} = await reader.read(); if (done) break; if (value) chunks.push(value); }
     let len = chunks.reduce((a,b) => a+b.length, 0), out = new Uint8Array(len), off = 0;
     for (const c of chunks) { out.set(c, off); off += c.length; }
     return JSON.parse(new TextDecoder().decode(out));
-  } catch(e1) {
-    try { return parseRaw(token); }
-    catch(e2) { console.error(e1,e2); alert('URL 数据解析失败。请确认链接完整，或使用 Chrome/Edge 打开。'); return null; }
+  } catch(e) {
+    try { return JSON.parse(new TextDecoder().decode(tokenToBytes(token))); } catch(err) { return null; }
   }
 }
 
 // ═══════════════════════════════════════════
-// 5. 构建图数据
+// 5. 构建与计算布局
 // ═══════════════════════════════════════════
 function addNode(list, map, id, label, type, entity) {
-  id = canon(id);
-  if (!id) return;
+  id = canon(id); if (!id) return;
   if (map.has(id)) { Object.assign(map.get(id).entity || {}, entity || {}); return; }
   const n = { id, label: cleanText(label || id), type, entity: entity || {} };
-  list.push(n);
-  map.set(id, n);
+  list.push(n); map.set(id, n);
 }
 
 function buildGraph(data) {
-  // 兼容 graph_json 包装
-  if (data && data.graph_json) {
-    data = typeof data.graph_json === 'string' ? JSON.parse(data.graph_json) : data.graph_json;
-  }
+  if (data && data.graph_json) data = typeof data.graph_json === 'string' ? JSON.parse(data.graph_json) : data.graph_json;
   const nodes = [], map = new Map(), alias = new Map();
   const e = data.entities || {}, meta = data.meta || {};
+  const jobName = cleanText(meta.job_title || e.job?.name || 'AI数据标注师');
 
-  const industry = e.industry_chain || {};
-  const group = e.job_group || {};
-  const job = e.job || {};
-  const jobName = cleanText(meta.job_title || job.name || 'AI数据标注师');
+  addNode(nodes, map, e.industry_chain?.name || '人工智能基础数据服务产业', e.industry_chain?.name || '人工智能基础数据服务产业', 'industry_chain', e.industry_chain);
+  addNode(nodes, map, e.job_group?.name || '数据标注', e.job_group?.name || '数据标注', 'job_group', e.job_group);
+  addNode(nodes, map, jobName, jobName, 'job', e.job);
 
-  addNode(nodes, map, industry.name || '人工智能基础数据服务产业', industry.name || '人工智能基础数据服务产业', 'industry_chain', industry);
-  addNode(nodes, map, group.name || '数据标注', group.name || '数据标注', 'job_group', group);
-  addNode(nodes, map, jobName, jobName, 'job', job);
-
-  // 别名：多种可能的岗位名都映射到 jobName
-  [industry.name, group.name, job.name, meta.job_title].forEach(v => {
-    const c = canon(v); if (!c) return;
-    alias.set(c, canon(jobName));
-  });
-
+  [e.industry_chain?.name, e.job_group?.name, e.job?.name, meta.job_title].forEach(v => { if (canon(v)) alias.set(canon(v), canon(jobName)); });
+  (e.job_specializations || []).forEach(x => addNode(nodes, map, x.id, x.name, 'job_specialization', x));
   (e.tasks || []).forEach(x => addNode(nodes, map, x.id, x.name, 'task', x));
   (e.competencies || []).forEach(x => addNode(nodes, map, x.id, x.name, 'competency', x));
   (e.skills || []).forEach(x => addNode(nodes, map, x.id, x.name, 'skill', x));
 
-  // 构建边
   const links = [], seen = new Set();
   (data.edges || []).forEach(edge => {
     let s = alias.get(canon(edge.source)) || canon(edge.source);
     let t = alias.get(canon(edge.target)) || canon(edge.target);
     if (!map.has(s) || !map.has(t)) return;
     const k = s + '>' + t + '>' + cleanText(edge.relation || 'RELATED_TO');
-    if (seen.has(k)) return;
-    seen.add(k);
-    links.push({ source: s, target: t, relation: cleanText(edge.relation || 'RELATED_TO') });
+    if (!seen.has(k)) { seen.add(k); links.push({ source: s, target: t, relation: cleanText(edge.relation || 'RELATED_TO') }); }
   });
-
   return { nodes, links, meta: { ...meta, job_title: jobName } };
 }
 
-// ═══════════════════════════════════════════
-// 6. 布局计算 (6 列等距)
-// ═══════════════════════════════════════════
 function computeLayout() {
   const groups = Object.fromEntries(ORDER.map(t => [t, graph.nodes.filter(n => n.type === t)]));
   const maxN = Math.max(...Object.values(groups).map(a => a.length), 1);
-  const colGap = 230, startX = 95, top = 130, rowGap = 58;
+  const colGap = 185, startX = 85, top = 130, rowGap = 55;
 
   layout.w = startX * 2 + colGap * (ORDER.length - 1) + 190;
   layout.h = Math.max(820, top + maxN * rowGap + 120);
@@ -343,95 +324,70 @@ function computeLayout() {
     const x = startX + ci * colGap;
     const total = (arr.length - 1) * rowGap;
     const base = Math.max(top, (layout.h - total) / 2);
-
-    arr.sort((a, b) => a.id.localeCompare(b.id, 'zh-CN'))
-       .forEach((n, i) => {
-         layout.nodes.set(n.id, { x, y: base + i * rowGap, w: type === 'skill' ? 174 : 176, h: 42 });
-       });
+    arr.sort((a, b) => a.id.localeCompare(b.id, 'zh-CN')).forEach((n, i) => {
+      layout.nodes.set(n.id, { x, y: base + i * rowGap, w: type === 'skill' ? 174 : 176, h: 42 });
+    });
   });
 }
 
-// ═══════════════════════════════════════════
-// 7. 可见性判断
-// ═══════════════════════════════════════════
 function visibleNode(n) {
-  const keepTypes = ['industry_chain', 'job_group', 'job'];
+  const keepTypes = ['industry_chain', 'job_group', 'job', 'job_specialization'];
   const f = activeFilter === 'all' || n.type === activeFilter || keepTypes.includes(n.type);
-  const q = !searchText ||
-    n.label.toLowerCase().includes(searchText) ||
-    n.id.toLowerCase().includes(searchText) ||
-    JSON.stringify(n.entity || {}).toLowerCase().includes(searchText);
+  const q = !searchText || n.label.toLowerCase().includes(searchText) || n.id.toLowerCase().includes(searchText);
   return { show: f, match: q, visible: f && q };
 }
 
-// ═══════════════════════════════════════════
-// 8. 边路径 (贝塞尔曲线)
-// ═══════════════════════════════════════════
 function edgePath(a, b) {
   const pa = layout.nodes.get(a), pb = layout.nodes.get(b);
   if (!pa || !pb) return '';
   const x1 = pa.x + pa.w, y1 = pa.y + pa.h / 2;
   const x2 = pb.x, y2 = pb.y + pb.h / 2;
-  const dx = Math.max(70, (x2 - x1) * 0.5);
-  return `M${x1},${y1} C${x1 + dx},${y1} ${x2 - dx},${y2} ${x2},${y2}`;
+  return `M${x1},${y1} C${x1 + Math.max(70, (x2 - x1) * 0.5)},${y1} ${x2 - Math.max(70, (x2 - x1) * 0.5)},${y2} ${x2},${y2}`;
 }
 
 // ═══════════════════════════════════════════
-// 9. 渲染
+// 6. SVG 渲染主逻辑
 // ═══════════════════════════════════════════
 function render() {
   computeLayout();
-
   const svg = document.getElementById('graph');
-  svg.setAttribute('viewBox', `0 0 ${layout.w} ${layout.h}`);
-  svg.setAttribute('width', layout.w);
-  svg.setAttribute('height', layout.h);
-  svg.innerHTML = '';
+  const view = document.getElementById('viewport');
+  view.innerHTML = '';
 
   const ns = 'http://www.w3.org/2000/svg';
-
-  // Defs (滤镜 + 箭头标记)
-  const defs = document.createElementNS(ns, 'defs');
+  
+  // 注入滤镜
+  let defs = svg.querySelector('defs');
+  if(!defs) {
+    defs = document.createElementNS(ns, 'defs');
+    svg.appendChild(defs);
+  }
   defs.innerHTML = `
-    <filter id="softGlow" x="-50%" y="-50%" width="200%" height="200%">
-      <feDropShadow dx="0" dy="0" stdDeviation="5" flood-color="#60a5fa" flood-opacity="0.45"/>
-    </filter>
-    <filter id="yellowGlow" x="-50%" y="-50%" width="200%" height="200%">
-      <feDropShadow dx="0" dy="0" stdDeviation="5" flood-color="#facc15" flood-opacity="0.45"/>
-    </filter>
-    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-      <path d="M0,0 L10,5 L0,10 z" fill="rgba(148,163,184,.38)"></path>
-    </marker>
+    <filter id="softGlow" x="-50%" y="-50%" width="200%" height="200%"><feDropShadow dx="0" dy="0" stdDeviation="5" flood-color="#60a5fa" flood-opacity="0.45"/></filter>
+    <filter id="yellowGlow" x="-50%" y="-50%" width="200%" height="200%"><feDropShadow dx="0" dy="0" stdDeviation="5" flood-color="#facc15" flood-opacity="0.45"/></filter>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="rgba(148,163,184,.38)"></path></marker>
   `;
-  svg.appendChild(defs);
 
-  // ── 列标题 + 分隔线 ──
+  // 绘制列背景线与列标题
+  const colGapV = 185, startXV = 85;
   ORDER.forEach((type, ci) => {
-    const x = 95 + ci * 230;
-    // 竖线
+    const x = startXV + ci * colGapV;
     const line = document.createElementNS(ns, 'line');
-    line.setAttribute('x1', x + 88);
-    line.setAttribute('x2', x + 88);
-    line.setAttribute('y1', '82');
-    line.setAttribute('y2', layout.h - 56);
+    line.setAttribute('x1', x + 88); line.setAttribute('x2', x + 88); line.setAttribute('y1', '82'); line.setAttribute('y2', layout.h - 56);
     line.setAttribute('class', 'column-line');
-    svg.appendChild(line);
-    // 标题
+    view.appendChild(line);
+
     const title = document.createElementNS(ns, 'text');
-    title.setAttribute('x', x + 88);
-    title.setAttribute('y', '72');
-    title.setAttribute('text-anchor', 'middle');
-    title.setAttribute('class', 'column-title');
+    title.setAttribute('x', x + 88); title.setAttribute('y', '72'); title.setAttribute('text-anchor', 'middle'); title.setAttribute('class', 'column-title');
     title.textContent = TYPE_INFO[type].label;
-    svg.appendChild(title);
+    view.appendChild(title);
   });
 
-  // ── 边 ──
+  // 连线层
   const edgeLayer = document.createElementNS(ns, 'g');
-  svg.appendChild(edgeLayer);
+  view.appendChild(edgeLayer);
   graph.links.forEach(l => {
-    const s = graph.nodes.find(n => n.id === l.source);
-    const t = graph.nodes.find(n => n.id === l.target);
+    const s = graph.nodes.find(n => n.id === l.source), t = graph.nodes.find(n => n.id === l.target);
     if (!s || !t) return;
     const vs = visibleNode(s), vt = visibleNode(t);
     const p = document.createElementNS(ns, 'path');
@@ -441,84 +397,134 @@ function render() {
     edgeLayer.appendChild(p);
   });
 
-  // ── 节点 ──
+  // 节点层
   const nodeLayer = document.createElementNS(ns, 'g');
-  svg.appendChild(nodeLayer);
+  view.appendChild(nodeLayer);
   graph.nodes.forEach(n => {
-    const pos = layout.nodes.get(n.id);
-    if (!pos) return;
+    const pos = layout.nodes.get(n.id); if (!pos) return;
     const v = visibleNode(n);
     const g = document.createElementNS(ns, 'g');
-    g.setAttribute('class', 'node' +
-      (!v.visible ? ' dim' : '') +
-      (searchText && v.match ? ' highlight' : ''));
+    g.setAttribute('class', 'node' + (!v.visible ? ' dim' : '') + (searchText && v.match ? ' highlight' : ''));
     g.setAttribute('transform', `translate(${pos.x},${pos.y})`);
-    g.onclick = () => showDetail(n);
+    g.onclick = (e) => { e.stopPropagation(); showDetail(n); };
 
-    // 卡片背景
     const rect = document.createElementNS(ns, 'rect');
-    rect.setAttribute('class', 'node-card');
-    rect.setAttribute('width', pos.w);
-    rect.setAttribute('height', pos.h);
+    rect.setAttribute('class', 'node-card'); rect.setAttribute('width', pos.w); rect.setAttribute('height', pos.h);
     g.appendChild(rect);
 
-    // 类型色点
     const dot = document.createElementNS(ns, 'circle');
-    dot.setAttribute('class', 'node-dot');
-    dot.setAttribute('cx', '17'); dot.setAttribute('cy', '21'); dot.setAttribute('r', '6');
+    dot.setAttribute('class', 'node-dot'); dot.setAttribute('cx', '17'); dot.setAttribute('cy', '21'); dot.setAttribute('r', '6');
     dot.setAttribute('fill', TYPE_INFO[n.type].color);
     g.appendChild(dot);
 
-    // 标题
     const title = document.createElementNS(ns, 'text');
-    title.setAttribute('class', 'node-title');
-    title.setAttribute('x', '32'); title.setAttribute('y', '19');
+    title.setAttribute('class', 'node-title'); title.setAttribute('x', '32'); title.setAttribute('y', '19');
     title.textContent = truncate(n.label, n.type === 'skill' ? 12 : 13);
     g.appendChild(title);
 
-    // 副标题
-    const meta = document.createElementNS(ns, 'text');
-    meta.setAttribute('class', 'node-meta');
-    meta.setAttribute('x', '32'); meta.setAttribute('y', '34');
-    meta.textContent = (n.entity.level ? n.entity.level + ' · ' : '') +
-      (n.entity.category || n.entity.type || TYPE_INFO[n.type].label);
-    g.appendChild(meta);
+    const m = document.createElementNS(ns, 'text');
+    m.setAttribute('class', 'node-meta'); m.setAttribute('x', '32'); m.setAttribute('y', '34');
+    m.textContent = (n.entity.level ? n.entity.level + ' · ' : '') + (n.entity.category || n.entity.type || TYPE_INFO[n.type].label);
+    g.appendChild(m);
 
     nodeLayer.appendChild(g);
   });
 
-  // 更新统计
   updateStats();
-
-  // 隐藏空状态
+  applyTransform();
   document.getElementById('emptyState').style.display = 'none';
 }
 
 // ═══════════════════════════════════════════
-// 10. 详情面板
+// 7. 精确平移缩放逻辑 (不影响字体的矩阵变换)
+// ═══════════════════════════════════════════
+function applyTransform() {
+  const view = document.getElementById('viewport');
+  if(view) {
+    view.setAttribute('transform', `matrix(${transformState.scale}, 0, 0, ${transformState.scale}, ${transformState.x}, ${transformState.y})`);
+  }
+}
+
+const wrap = document.getElementById('wrap');
+
+// 鼠标按下：启动拖拽
+wrap.addEventListener('mousedown', e => {
+  if (e.button !== 0) return; // 仅左键可拖拽
+  isDragging = true;
+  startPan = { x: e.clientX - transformState.x, y: e.clientY - transformState.y };
+});
+
+// 鼠标移动中
+window.addEventListener('mousemove', e => {
+  if (!isDragging) return;
+  transformState.x = e.clientX - startPan.x;
+  transformState.y = e.clientY - startPan.y;
+  applyTransform();
+});
+
+// 释放鼠标
+window.addEventListener('mouseup', () => { isDragging = false; });
+
+// 鼠标滚轮缩放
+wrap.addEventListener('wheel', e => {
+  e.preventDefault();
+  const zoomFactor = 1.1;
+  const rect = wrap.getBoundingClientRect();
+  const mouseX = e.clientX - rect.left;
+  const mouseY = e.clientY - rect.top;
+
+  // 计算当前的画布内坐标位置
+  const graphX = (mouseX - transformState.x) / transformState.scale;
+  const graphY = (mouseY - transformState.y) / transformState.scale;
+
+  // 缩放计算
+  if (e.deltaY < 0) {
+    transformState.scale = Math.min(3, transformState.scale * zoomFactor);
+  } else {
+    transformState.scale = Math.max(0.3, transformState.scale / zoomFactor);
+  }
+
+  // 保证鼠标指针所指点的位置在缩放前后保持不动
+  transformState.x = mouseX - graphX * transformState.scale;
+  transformState.y = mouseY - graphY * transformState.scale;
+  applyTransform();
+}, { passive: false });
+
+// 自动回到中心/重置视野
+document.getElementById('resetBtn').onclick = () => {
+  const containerW = wrap.clientWidth;
+  const containerH = wrap.clientHeight;
+  
+  // 完美计算缩放比，自适应视口
+  const scaleX = containerW / layout.w;
+  const scaleY = containerH / layout.h;
+  transformState.scale = Math.min(scaleX, scaleY, 0.95);
+  
+  // 居中
+  transformState.x = (containerW - layout.w * transformState.scale) / 2;
+  transformState.y = (containerH - layout.h * transformState.scale) / 2;
+  applyTransform();
+};
+
+// 监听窗口大小改变自适应调整中心
+window.onresize = () => { if(graph.nodes.length) document.getElementById('resetBtn').click(); };
+
+// ═══════════════════════════════════════════
+// 8. 其他交互与面板管理
 // ═══════════════════════════════════════════
 function showDetail(n) {
-  const c = TYPE_INFO[n.type];
-  const e = n.entity || {};
-  const rows = [];
-  ['description', 'summary'].forEach(k => {
-    if (e[k]) rows.push(`<p>${cleanText(e[k])}</p>`);
-  });
-  if (e.category)        rows.push(`<p><b>分类：</b>${cleanText(e.category)}</p>`);
-  if (e.data_type)       rows.push(`<p><b>数据类型：</b>${cleanText(e.data_type)}</p>`);
-  if (e.level)           rows.push(`<p><b>等级：</b>${cleanText(e.level)}</p>`);
-  if (e.type && n.type === 'competency') rows.push(`<p><b>能力类型：</b>${cleanText(e.type)}</p>`);
-  if (e.type && n.type === 'skill')      rows.push(`<p><b>技能类型：</b>${cleanText(e.type)}</p>`);
+  const c = TYPE_INFO[n.type]; const e = n.entity || {}; const rows = [];
+  ['description', 'summary'].forEach(k => { if (e[k]) rows.push(`<p>${cleanText(e[k])}</p>`); });
+  if (e.category)  rows.push(`<p><b>分类：</b>${cleanText(e.category)}</p>`);
+  if (e.data_type) rows.push(`<p><b>数据类型：</b>${cleanText(e.data_type)}</p>`);
+  if (e.level)     rows.push(`<p><b>等级：</b>${cleanText(e.level)}</p>`);
+  if (e.type)      rows.push(`<p><b>特性类型：</b>${cleanText(e.type)}</p>`);
   if (e.tool_related && e.tool_related !== 'None') rows.push(`<p><b>相关工具：</b>${cleanText(e.tool_related)}</p>`);
-  if (e.difficulty)       rows.push(`<p><b>难度：</b>${cleanText(e.difficulty)}</p>`);
-  if (e.related_positions && e.related_positions.length) rows.push(`<p><b>相关岗位：</b>${e.related_positions.map(cleanText).join('、')}</p>`);
-  if (e.career_level)     rows.push(`<p><b>职业等级：</b>${cleanText(e.career_level)}</p>`);
-
+  if (e.difficulty) rows.push(`<p><b>难度：</b>${cleanText(e.difficulty)}</p>`);
+  
   document.getElementById('detailContent').innerHTML = `
     <h2 style="color:${c.color}">${cleanText(n.label)}</h2>
-    <div class="tag" style="background:${c.color}22;color:${c.color}">
-      <span class="legend-dot" style="background:${c.color}"></span>${c.label}
-    </div>
+    <div class="tag" style="background:${c.color}22;color:${c.color}"><span class="legend-dot" style="background:${c.color}"></span>${c.label}</div>
     ${rows.join('') || '<p>暂无详细描述。</p>'}
   `;
   document.getElementById('detail').classList.add('show');
@@ -528,113 +534,60 @@ function updateStats() {
   const counts = Object.fromEntries(ORDER.map(t => [t, graph.nodes.filter(n => n.type === t).length]));
   document.getElementById('stats').innerHTML = `
     <div class="stat-row"><span class="legend-dot" style="background:#fb7185"></span>岗位链：${counts.industry_chain + counts.job_group + counts.job}</div>
+    <div class="stat-row"><span class="legend-dot" style="background:#a78bfa"></span>岗位方向：${counts.job_specialization || 0}</div>
     <div class="stat-row"><span class="legend-dot" style="background:#f59e0b"></span>工作任务：${counts.task}</div>
     <div class="stat-row"><span class="legend-dot" style="background:#38bdf8"></span>能力项：${counts.competency}</div>
     <div class="stat-row"><span class="legend-dot" style="background:#22c55e"></span>技能点：${counts.skill}</div>
     <div class="stat-row">关系：${graph.links.length}</div>
   `;
-  document.getElementById('subtitle').textContent =
-    (graph.meta?.job_title || '岗位') + ' · 任务、能力、技能关系图谱';
+  document.getElementById('subtitle').textContent = (graph.meta?.job_title || '岗位') + ' · 方向、任务、能力、技能关系图谱';
 }
 
-// ═══════════════════════════════════════════
-// 11. Toast
-// ═══════════════════════════════════════════
 function toast(msg) {
-  const t = document.getElementById('toast');
-  t.textContent = msg;
-  t.classList.add('show');
+  const t = document.getElementById('toast'); t.textContent = msg; t.classList.add('show');
   setTimeout(() => t.classList.remove('show'), 1600);
 }
 
-// ═══════════════════════════════════════════
-// 12. 事件绑定
-// ═══════════════════════════════════════════
-// 筛选按钮
 document.querySelectorAll('.btn[data-filter]').forEach(b => {
   b.onclick = () => {
     document.querySelectorAll('.btn[data-filter]').forEach(x => x.classList.remove('active'));
-    b.classList.add('active');
-    activeFilter = b.dataset.filter;
-    render();
+    b.classList.add('active'); activeFilter = b.dataset.filter; render();
   };
 });
 
-// 搜索
-document.getElementById('searchInput').oninput = e => {
-  searchText = e.target.value.trim().toLowerCase();
-  render();
-};
-
-// 复制链接
-document.getElementById('copyBtn').onclick = () =>
-  navigator.clipboard.writeText(location.href)
-    .then(() => toast('链接已复制'))
-    .catch(() => toast('复制失败'));
-
-// 关闭详情
-document.getElementById('closeDetail').onclick = () =>
-  document.getElementById('detail').classList.remove('show');
-
-// 回到中心
-document.getElementById('resetBtn').onclick = () => {
-  const w = document.getElementById('wrap');
-  w.scrollTo({
-    left: Math.max(0, (layout.w - w.clientWidth) / 2),
-    top: Math.max(0, (layout.h - w.clientHeight) / 2),
-    behavior: 'smooth'
-  });
-};
-
-// 点击空白关闭详情
-document.querySelector('.canvas-wrap').addEventListener('click', function(e) {
-  if (e.target === this) {
-    document.getElementById('detail').classList.remove('show');
-  }
-});
+document.getElementById('searchInput').oninput = e => { searchText = e.target.value.trim().toLowerCase(); render(); };
+document.getElementById('copyBtn').onclick = () => navigator.clipboard.writeText(location.href).then(() => toast('链接已复制')).catch(() => toast('复制失败'));
+document.getElementById('closeDetail').onclick = () => document.getElementById('detail').classList.remove('show');
+wrap.onclick = () => document.getElementById('detail').classList.remove('show');
 
 // ═══════════════════════════════════════════
-// 13. 拖拽 JSON 文件
+// 9. 拖拽外部 JSON
 // ═══════════════════════════════════════════
-document.addEventListener('dragover', e => { e.preventDefault(); });
+document.addEventListener('dragover', e => e.preventDefault());
 document.addEventListener('drop', e => {
-  e.preventDefault();
-  const file = e.dataTransfer.files[0];
-  if (!file) return;
+  e.preventDefault(); const file = e.dataTransfer.files[0]; if (!file) return;
   const reader = new FileReader();
   reader.onload = ev => {
     try {
-      const data = JSON.parse(ev.target.result);
-      graph = buildGraph(data);
-      render();
+      graph = buildGraph(JSON.parse(ev.target.result)); render();
       document.getElementById('sourcePill').innerHTML = '已加载文件<br/>' + file.name;
-      document.getElementById('emptyState').style.display = 'none';
-      setTimeout(() => document.getElementById('resetBtn').click(), 80);
-    } catch (err) {
-      alert('JSON 解析失败: ' + err.message);
-    }
+      setTimeout(() => document.getElementById('resetBtn').click(), 60);
+    } catch (err) { alert('JSON 解析失败: ' + err.message); }
   };
   reader.readAsText(file);
 });
 
 // ═══════════════════════════════════════════
-// 14. 启动
+// 10. 初始化与启动
 // ═══════════════════════════════════════════
 (async function init() {
+  let data = EMBEDDED_DATA; let sourceText = '内置示例数据<br/>可拖入 JSON 或分享链接替换';
   const urlData = await decodeURLData();
-
-  if (urlData) {
-    graph = buildGraph(urlData);
-    document.getElementById('sourcePill').innerHTML = 'URL 数据已加载<br/>可直接分享此链接';
-  } else {
-    // 无 URL 数据时显示空状态等待拖入
-    document.getElementById('sourcePill').innerHTML = '拖入 JSON 文件<br/>或通过分享链接打开';
-    document.getElementById('emptyState').style.display = 'grid';
-    return;
-  }
-
+  if (urlData) { data = urlData; sourceText = 'URL 数据已加载<br/>可直接分享此链接'; }
+  graph = buildGraph(data);
+  document.getElementById('sourcePill').innerHTML = sourceText;
   render();
-  setTimeout(() => document.getElementById('resetBtn').click(), 80);
+  setTimeout(() => document.getElementById('resetBtn').click(), 120);
 })();
 </script>
 </body>
