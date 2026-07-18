@@ -16,19 +16,22 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",s
 .lt-card:hover{border-color:rgba(100,181,246,.3);box-shadow:0 4px 24px rgba(100,181,246,.08)}
 .lt-card .lt-badge{display:inline-block;padding:3px 10px;border-radius:12px;font-size:11px;margin-bottom:10px;background:rgba(255,167,38,.15);color:#ffa726}
 .lt-card h3{font-size:17px;margin-bottom:4px}
-.lt-card .lt-ref{font-size:11px;color:#555;margin-bottom:10px}
+.lt-card .lt-significance{font-size:12px;color:#ffcc80;background:rgba(255,167,38,.08);padding:10px 12px;border-radius:8px;margin-bottom:10px;border-left:3px solid #ffa726;line-height:1.7}
 .lt-card .lt-scenario{font-size:13px;color:#bbb;background:rgba(255,255,255,.04);padding:12px;border-radius:8px;margin-bottom:14px;border-left:3px solid #42a5f5;line-height:1.7}
 .lt-card h4{font-size:13px;color:#64b5f6;margin:16px 0 8px}
 .lt-step{font-size:12px;padding:8px 12px;margin:4px 0;background:rgba(255,255,255,.03);border-radius:6px;display:flex;gap:10px;align-items:flex-start}
 .lt-step .step-num{background:#3f51b5;color:#fff;width:22px;height:22px;border-radius:50%;text-align:center;line-height:22px;font-size:11px;flex-shrink:0}
 .lt-step .step-dur{color:#888;font-size:10px;white-space:nowrap}
 .lt-step .step-tip{color:#ffa726;font-size:10px;margin-top:2px}
+.lt-step .step-output{color:#81c784;font-size:10px;margin-top:2px}
 .lt-tags{display:flex;flex-wrap:wrap;gap:4px;margin:6px 0}
 .lt-tags span{font-size:10px;padding:2px 8px;border-radius:10px;background:rgba(102,187,106,.15);color:#66bb6a}
-.lt-safety{font-size:11px;color:#ef5350;padding:6px 10px;background:rgba(239,83,80,.08);border-radius:6px;margin-top:8px}
-.lt-resource{font-size:11px;display:flex;align-items:center;gap:6px;padding:3px 0}
-.lt-resource .res-icon{font-size:14px}
-.lt-assessment{font-size:12px;color:#ce93d8;margin-top:8px;padding:8px 10px;background:rgba(206,147,216,.06);border-radius:6px}
+.lt-safety{font-size:11px;color:#ef5350;padding:6px 10px;background:rgba(239,83,80,.08);border-radius:6px;margin-top:8px;line-height:1.6}
+.lt-resource{font-size:11px;display:flex;align-items:flex-start;gap:6px;padding:4px 0;line-height:1.5}
+.lt-resource .res-icon{font-size:14px;flex-shrink:0;margin-top:1px}
+.lt-resource a{color:#64b5f6;font-size:10px;text-decoration:none;word-break:break-all}
+.lt-resource a:hover{text-decoration:underline}
+.lt-assessment{font-size:12px;color:#ce93d8;margin-top:8px;padding:8px 10px;background:rgba(206,147,216,.06);border-radius:6px;line-height:1.6}
 #loading{text-align:center;color:#888;padding:60px;font-size:16px}
 .placeholder{text-align:center;color:#666;padding:80px 20px}
 .placeholder .icon{font-size:60px;margin-bottom:16px}
@@ -70,6 +73,14 @@ async function decompressFromURL(){
   }catch(e){console.error(e);return null;}
 }
 
+function resIcon(type){
+  if(!type)return '📎';
+  if(type.includes('视频'))return '🎬';
+  if(type.includes('文档'))return '📄';
+  if(type.includes('工具'))return '🛠️';
+  return '📎';
+}
+
 function renderCards(data){
   document.getElementById('loading').style.display='none';
   const lts=data.learning_tasks||data.entities?.learning_tasks||[];
@@ -78,6 +89,8 @@ function renderCards(data){
     return;
   }
   document.getElementById('grid').innerHTML=lts.map(lt=>{
+    const totalMin=(lt.steps||[]).reduce((a,b)=>a+(parseInt(b.duration)||15),0);
+
     const stepsHtml=(lt.steps||[]).map(s=>`
       <div class="lt-step">
         <span class="step-num">${s.order}</span>
@@ -85,13 +98,34 @@ function renderCards(data){
           <strong style="font-size:12px">${s.title||''}</strong>
           <div style="color:#ccc;margin-top:2px">${s.action||''}</div>
           ${s.tips?`<div class="step-tip">💡 ${s.tips}</div>`:''}
+          ${s.output?`<div class="step-output">📤 产出：${s.output}</div>`:''}
         </div>
         <span class="step-dur">${s.duration||''}分钟</span>
       </div>`).join('');
 
-    const tagsHtml=[...(lt.knowledge_points||[]).map(k=>`<span>📚 ${k}</span>`),...(lt.skill_points||[]).map(k=>`<span>🔧 ${k}</span>`)].join('');
+    const kpTags=(lt.knowledge_points||[]).map(k=>`<span>📚 ${k}</span>`).join('');
+    const spTags=(lt.skill_points||[]).map(s=>`<span>🔧 ${s}</span>`).join('');
 
-    const resourcesHtml=(lt.resources||[]).map(r=>`<div class="lt-resource"><span class="res-icon">📎</span><strong>${r.name||''}</strong>${r.note?` <span style="color:#888">— ${r.note}</span>`:''}${r.link?` <a href="${r.link}" style="color:#64b5f6;font-size:10px">打开</a>`:''}</div>`).join('');
+    const teachResHtml=(lt.teaching_resources||[]).map(r=>`
+      <div class="lt-resource">
+        <span class="res-icon">${resIcon(r.type)}</span>
+        <div style="flex:1">
+          <strong>${r.name||''}</strong>
+          <span style="color:#888;font-size:10px">[${r.type||''}]</span>
+          ${r.description?`<div style="color:#aaa;font-size:10px;margin-top:1px">${r.description}</div>`:''}
+          ${r.url?`<a href="${r.url}" target="_blank">${r.url}</a>`:''}
+        </div>
+      </div>`).join('');
+
+    const datasetHtml=(lt.practice_datasets||[]).map(d=>`
+      <div class="lt-resource">
+        <span class="res-icon">💾</span>
+        <div style="flex:1">
+          <strong>${d.name||''}</strong>
+          ${d.description?`<div style="color:#aaa;font-size:10px;margin-top:1px">${d.description}</div>`:''}
+          ${d.url?`<a href="${d.url}" target="_blank">${d.url}</a>`:''}
+        </div>
+      </div>`).join('');
 
     const safetyHtml=(lt.safety_points||[]).map(s=>`⚠️ ${s}`).join('<br>');
 
@@ -99,14 +133,16 @@ function renderCards(data){
     <div class="lt-card">
       <span class="lt-badge">🎯 ${lt.work_task_ref||''}</span>
       <h3>${lt.name||''}</h3>
-      <div class="lt-scenario">${lt.scenario||''}</div>
+      ${lt.significance?`<div class="lt-significance">💡 <strong>任务意义：</strong>${lt.significance}</div>`:''}
+      ${lt.scenario?`<div class="lt-scenario">📖 <strong>工作情境：</strong>${lt.scenario}</div>`:''}
       ${lt.objectives?.length?`<h4>🎯 学习目标</h4><ul style="font-size:12px;color:#ccc;padding-left:18px;margin:4px 0">${lt.objectives.map(o=>`<li>${o}</li>`).join('')}</ul>`:''}
-      <h4>📝 任务步骤 (约${(lt.steps||[]).reduce((a,b)=>a+(parseInt(b.duration)||15),0)}分钟)</h4>
+      <h4>📝 任务步骤 (约${totalMin}分钟)</h4>
       ${stepsHtml}
-      ${tagsHtml?`<h4>🏷️ 关联知识点/技能点</h4><div class="lt-tags">${tagsHtml}</div>`:''}
+      ${(kpTags||spTags)?`<h4>🏷️ 关联知识点/技能点</h4><div class="lt-tags">${kpTags}${spTags}</div>`:''}
       ${safetyHtml?`<h4>🛡️ 安全要点</h4><div class="lt-safety">${safetyHtml}</div>`:''}
-      ${resourcesHtml?`<h4>📦 推荐实训资源</h4>${resourcesHtml}`:''}
-      ${lt.assessment?`<h4>✅ 考核标准</h4><div class="lt-assessment"><div>方式: ${lt.assessment.method||''}</div><div>标准: ${(lt.assessment.criteria||[]).join(' | ')}</div><div>合格线: ${lt.assessment.pass_line||''}</div></div>`:''}
+      ${teachResHtml?`<h4>🎓 教学资源</h4>${teachResHtml}`:''}
+      ${datasetHtml?`<h4>💾 实训数据集</h4>${datasetHtml}`:''}
+      ${lt.assessment?`<h4>✅ 考核标准</h4><div class="lt-assessment"><div>📋 方式：${lt.assessment.method||''}</div><div>📏 标准：${(lt.assessment.criteria||[]).join(' | ')}</div><div>📊 合格线：${lt.assessment.pass_line||''}</div></div>`:''}
     </div>`;
   }).join('');
 }
