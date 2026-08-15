@@ -1,0 +1,703 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>AI数据标注师 · 岗位能力图谱树</title>
+<style>
+:root {
+  --bg:#070b1d; --panel:#10172f; --panel2:#0d1328; --text:#eaf1ff; --muted:#94a3b8;
+  --line:#26314f; --task:#f59e0b; --comp:#38bdf8; --skill:#22c55e; --root:#fb7185;
+  --glow:#60a5fa; --border:rgba(148,163,184,.18);
+}
+* { box-sizing:border-box } html,body { height:100%; margin:0 }
+body {
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",Arial,sans-serif;
+  background:
+    radial-gradient(circle at 18% 8%, rgba(59,130,246,.15), transparent 30%),
+    radial-gradient(circle at 80% 15%, rgba(168,85,247,.12), transparent 34%),
+    linear-gradient(180deg, #070b1d 0%, #050714 100%);
+  color:var(--text); overflow:hidden;
+}
+#app { height:100%; display:grid; grid-template-rows:auto 1fr; }
+
+/* ── Header ── */
+.header {
+  padding:16px 24px 14px; border-bottom:1px solid var(--border);
+  background:rgba(7,11,29,.75); backdrop-filter:blur(20px);
+  box-shadow:0 10px 40px rgba(0,0,0,.3); z-index:5;
+}
+.topline { display:flex; align-items:center; gap:16px; flex-wrap:wrap; }
+.logo {
+  width:36px; height:36px; border-radius:12px;
+  background:linear-gradient(135deg,#60a5fa,#a78bfa);
+  box-shadow:0 0 20px rgba(96,165,250,.35);
+  display:grid; place-items:center; font-weight:900; color:#061225; font-size:14px;
+}
+h1 {
+  margin:0; font-size:20px; letter-spacing:.5px;
+  background:linear-gradient(135deg,#edf5ff,#c4b5fd);
+  -webkit-background-clip:text; background-clip:text; color:transparent;
+}
+.subtitle { margin:4px 0 0 52px; color:var(--muted); font-size:13px; }
+.toolbar { margin-left:auto; display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.input {
+  width:200px; height:34px; padding:0 12px;
+  border:1px solid var(--border); border-radius:8px;
+  background:rgba(15,23,42,.6); color:var(--text); outline:none; font-size:13px;
+}
+.input:focus { border-color:rgba(96,165,250,.6); }
+.btn {
+  height:34px; padding:0 14px; border:1px solid var(--border); border-radius:8px;
+  background:rgba(15,23,42,.6); color:#cbd5e1; cursor:pointer; transition:.15s; font-size:13px;
+}
+.btn:hover { border-color:rgba(96,165,250,.5); background:rgba(30,41,59,.7); }
+.btn.active {
+  background:linear-gradient(135deg,#2563eb,#7c3aed); border-color:transparent; color:white;
+}
+
+/* ── Canvas ── */
+.main { position:relative; overflow:hidden; min-height:0; }
+.canvas-wrap { position:absolute; inset:0; overflow:hidden; cursor: grab; user-select: none; }
+.canvas-wrap:active { cursor: grabbing; }
+svg { display:block; width:100%; height:100%; }
+
+/* ── SVG Elements Style ── */
+.edge { fill:none; stroke:rgba(148,163,184,.25); stroke-width:2.5; transition: stroke .2s, stroke-width .2s, opacity .2s; }
+.edge.active-branch { stroke:rgba(96,165,250,.4); stroke-width:3; }
+.edge.highlight-path { stroke:#60a5fa !important; stroke-width:4 !important; opacity:1 !important; }
+.edge.dim { opacity:.05 !important; }
+
+.node { cursor:pointer; transition: opacity .2s; }
+.node-card { 
+  rx:10; ry:10; 
+  fill:#0f162e; 
+  stroke:rgba(148,163,184,.2); 
+  stroke-width:1.2;
+}
+/* 悬浮发光 */
+.node:hover .node-card { stroke:rgba(96,165,250,.8); filter:url(#cardGlow); }
+
+.node-title { font-size:13px; font-weight:600; fill:#e2e8f0; pointer-events:none; }
+.node-meta { font-size:11px; fill:#64748b; pointer-events:none; }
+.node.dim { opacity:.12 !important; }
+.node.highlight .node-card { stroke:#facc15; stroke-width:2; }
+.node.highlight-node .node-card { stroke:#60a5fa; stroke-width:2.2; filter:url(#cardGlow); }
+
+/* ── Overlays ── */
+.stats {
+  position:absolute; left:24px; bottom:22px;
+  background:rgba(10,15,36,.85); border:1px solid var(--border); border-radius:12px;
+  padding:12px 16px; display:grid; gap:6px; box-shadow:0 10px 30px rgba(0,0,0,.3);
+  backdrop-filter:blur(10px); font-size:12px; pointer-events:none;
+}
+.stat-row { display:flex; align-items:center; gap:8px; color:#94a3b8; }
+.legend-dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
+
+.pill {
+  position:absolute; right:24px; bottom:22px;
+  background:rgba(10,15,36,.85); border:1px solid var(--border); border-radius:12px;
+  padding:10px 14px; color:#64748b; font-size:12px; backdrop-filter:blur(10px); pointer-events:none;
+}
+.detail {
+  position:absolute; top:24px; right:24px; width:360px; max-height:calc(100vh - 160px); 
+  overflow:auto; padding:20px; background:rgba(13,19,43,.95);
+  border:1px solid var(--border); border-radius:16px; box-shadow:0 20px 50px rgba(0,0,0,.4);
+  backdrop-filter:blur(20px); display:none; z-index:10;
+}
+.detail.show { display:block; }
+.detail h2 { font-size:18px; margin:0 0 10px 0; letter-spacing:.5px; }
+.detail p { font-size:13px; color:#94a3b8; line-height:1.6; margin:8px 0; }
+.detail b { color:#cbd5e1; }
+.close-btn { position:absolute; top:12px; right:14px; border:0; background:transparent; color:#64748b; font-size:22px; cursor:pointer; }
+.toast {
+  position:absolute; top:86px; left:50%; transform:translateX(-50%);
+  background:#1e293b; border:1px solid var(--border); border-radius:20px;
+  padding:8px 16px; color:#e2e8f0; font-size:13px; opacity:0; pointer-events:none; transition:.2s; z-index:20;
+}
+.toast.show { opacity:1; top:96px; }
+.empty-state { position:absolute; inset:0; display:grid; place-items:center; color:#475569; pointer-events:none; }
+</style>
+</head>
+<body>
+<div id="app">
+  <header class="header">
+    <div class="topline">
+      <div class="logo">KG</div>
+      <div>
+        <h1>AI数据标注师 · 树状泳道工作图谱</h1>
+        <div class="subtitle">解耦视觉分支结构，拒绝信息无序堆叠</div>
+      </div>
+      <div class="toolbar">
+        <input class="input" id="searchInput" placeholder="搜索图谱内容..." />
+        <button class="btn active" data-filter="all">全部</button>
+        <button class="btn" data-filter="job_specializations">细分岗位</button>
+        <button class="btn" data-filter="task">任务</button>
+        <button class="btn" data-filter="competency">能力</button>
+        <button class="btn" data-filter="skill">技能</button>
+        <button class="btn" id="copyBtn">复制分享</button>
+        <button class="btn" id="resetBtn">适配全局</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="main">
+    <div class="canvas-wrap" id="wrap">
+      <svg id="graph">
+        <g id="viewport"></g>
+      </svg>
+    </div>
+
+    <aside class="detail" id="detail">
+      <button class="close-btn" id="closeDetail">×</button>
+      <div id="detailContent"></div>
+    </aside>
+
+    <div class="stats" id="stats"></div>
+    <div class="pill" id="sourcePill">等待数据导入...</div>
+    <div class="toast" id="toast">已复制</div>
+    <div class="empty-state" id="emptyState"><h3>请拖入或通过URL提供标准的 JSON 数据包</h3></div>
+  </main>
+</div>
+
+<script>
+// 全局样式定义
+const TYPE_CONFIG = {
+  industry_chain:      { label:'产业链',      color:'#fb7185', level:0 },
+  job_group:           { label:'岗位群',      color:'#fb7185', level:1 },
+  job:                 { label:'目标岗位',    color:'#fb7185', level:2 },
+  job_specializations: { label:'细分岗位/方向',color:'#a78bfa', level:3 },
+  task:                { label:'工作任务',    color:'#f59e0b', level:4 },
+  competency:          { label:'能力项',      color:'#38bdf8', level:5 },
+  skill:               { label:'技能知识点',  color:'#22c55e', level:6 }
+};
+
+let graph = { nodes:[], links:[] };
+let layoutNodes = new Map();
+let activeFilter = 'all';
+let searchText = '';
+let currentSelectedNodeId = null; // 全局追踪选中的块节点 ID
+
+let transformState = { x: 0, y: 0, scale: 0.75 };
+let isDragging = false;
+let startPan = { x: 0, y: 0 };
+
+// ── 默认预存空数据或占位结构 ──
+const EMBEDDED_DATA = {};
+
+function cleanText(s) { return String(s??'').trim(); }
+function canon(s) { return String(s??'').replace(/\s+/g,'').trim(); }
+
+function addNode(list, map, id, label, type, entity) {
+  id = canon(id); if (!id) return;
+  if (map.has(id)) return;
+  const n = { id, label: cleanText(label || id), type, entity: entity || {} };
+  list.push(n); map.set(id, n);
+}
+
+// ── 解析原始标准 sample_graph.json ──
+function buildGraph(data) {
+  if (!data) return { nodes:[], links:[] };
+  if (data.graph_json) data = typeof data.graph_json === 'string' ? JSON.parse(data.graph_json) : data.graph_json;
+  
+  const nodes = [], map = new Map();
+  const e = data.entities || {};
+  const meta = data.meta || {};
+  const jobName = cleanText(meta.job_title || e.job?.name || 'AI数据标注师');
+
+  // 1. 注入核心大底座节点
+  addNode(nodes, map, 'industry_chain_root', e.industry_chain?.name || '人工智能基础数据服务产业', 'industry_chain', e.industry_chain);
+  addNode(nodes, map, 'job_group_root', e.job_group?.name || '数据服务与处理', 'job_group', e.job_group);
+  addNode(nodes, map, 'job_root', jobName, 'job', e.job);
+
+  // 2. 注入业务层级节点
+  (e.job_specializations || []).forEach(x => addNode(nodes, map, x.id, x.name, 'job_specializations', x));
+  (e.tasks || []).forEach(x => addNode(nodes, map, x.id, x.name, 'task', x));
+  (e.competencies || []).forEach(x => addNode(nodes, map, x.id, x.name, 'competency', x));
+  (e.skills || []).forEach(x => addNode(nodes, map, x.id, x.name, 'skill', x));
+
+  // 3. 构建关系链，对根节点进行标准别名转换映射
+  const links = [], seen = new Set();
+  const alias = {};
+  if(e.industry_chain?.name) alias[canon(e.industry_chain.name)] = 'industry_chain_root';
+  if(e.job_group?.name) alias[canon(e.job_group.name)] = 'job_group_root';
+  if(e.job?.name) alias[canon(e.job.name)] = 'job_root';
+  alias[canon(jobName)] = 'job_root';
+
+  (data.edges || []).forEach(edge => {
+    let s = alias[canon(edge.source)] || canon(edge.source);
+    let t = alias[canon(edge.target)] || canon(edge.target);
+    if (!map.has(s) || !map.has(t)) return;
+    
+    const k = s + '->' + t;
+    if (!seen.has(k)) {
+      seen.add(k);
+      links.push({ source: s, target: t, relation: edge.relation });
+    }
+  });
+
+  return { nodes, links };
+}
+
+// ═══════════════════════════════════════════
+// 🆕 核心鱼骨树状泳道排布算法 (紧凑度深度调整)
+// ═══════════════════════════════════════════
+function computeSwimlaneLayout() {
+  layoutNodes.clear();
+  
+  const cardW = 180, cardH = 46;
+  const gapX = 65;     // 收紧横向间距（原 110）
+  const gapY = 14;     // 收紧纵向节点间距（原 24）
+  const laneGapY = 40; // 收紧垂直泳道核心缓冲带高度（原 70）
+
+  // 1. 建立上下游索引
+  const adj = new Map(), radj = new Map();
+  graph.nodes.forEach(n => { adj.set(n.id, []); radj.set(n.id, []); });
+  graph.links.forEach(l => {
+    if (adj.has(l.source)) adj.get(l.source).push(l.target);
+    if (radj.has(l.target)) radj.get(l.target).push(l.source);
+  });
+
+  // 2. 识别分支主归属
+  const specs = graph.nodes.filter(n => n.type === 'job_specializations');
+  const belongToLane = new Map();
+
+  function traceLane(nodeId, visited = new Set()) {
+    if (belongToLane.has(nodeId)) return belongToLane.get(nodeId);
+    if (specs.some(s => s.id === nodeId)) return nodeId;
+    if (visited.has(nodeId)) return null;
+    visited.add(nodeId);
+    
+    const parents = radj.get(nodeId) || [];
+    for (let p of parents) {
+      let l = traceLane(p, visited);
+      if (l) { belongToLane.set(nodeId, l); return l; }
+    }
+    return null;
+  }
+  graph.nodes.forEach(n => traceLane(n.id));
+
+  // 3. 将节点按“业务泳道”和“层级类型”归档
+  const lanes = {};
+  specs.forEach(s => { lanes[s.id] = { job_specializations:[s], task:[], competency:[], skill:[] }; });
+  lanes['general'] = { job_specializations:[], task:[], competency:[], skill:[] };
+
+  graph.nodes.forEach(n => {
+    if (['industry_chain', 'job_group', 'job'].includes(n.type)) return;
+    let laneId = belongToLane.get(n.id) || 'general';
+    if (!lanes[laneId]) lanes[laneId] = { job_specializations:[], task:[], competency:[], skill:[] };
+    if (n.type !== 'job_specializations') {
+      lanes[laneId][n.type].push(n);
+    }
+  });
+
+  // 4. 计算垂直空间的紧凑泳道排布
+  let currentY = 50;
+  const startX = 60;
+
+  const rootChain = graph.nodes.find(n => n.type === 'industry_chain');
+  const rootGroup = graph.nodes.find(n => n.type === 'job_group');
+  const rootJob = graph.nodes.find(n => n.type === 'job');
+
+  let activeLanes = Object.keys(lanes).filter(k => 
+    lanes[k].job_specializations.length || lanes[k].task.length || lanes[k].competency.length || lanes[k].skill.length
+  );
+
+  activeLanes.forEach(laneId => {
+    const laneData = lanes[laneId];
+    const maxRows = Math.max(
+      laneData.job_specializations.length,
+      laneData.task.length,
+      laneData.competency.length,
+      laneData.skill.length
+    );
+    if (maxRows === 0) return;
+
+    const laneHeight = maxRows * (cardH + gapY);
+    const laneCenterY = currentY + laneHeight / 2;
+
+    ['job_specializations', 'task', 'competency', 'skill'].forEach(type => {
+      const arr = laneData[type] || [];
+      const totalH = (arr.length - 1) * (cardH + gapY);
+      const startY = laneCenterY - totalH / 2;
+
+      arr.sort((a,b) => a.label.localeCompare(b.label, 'zh-CN')).forEach((n, idx) => {
+        const colIndex = TYPE_CONFIG[n.type].level;
+        layoutNodes.set(n.id, {
+          x: startX + colIndex * (cardW + gapX),
+          y: startY + idx * (cardH + gapY),
+          w: cardW, h: cardH,
+          color: TYPE_CONFIG[n.type].color
+        });
+      });
+    });
+    currentY += laneHeight + laneGapY;
+  });
+
+  const totalCanvasCenterY = currentY / 2;
+  if (rootChain) layoutNodes.set(rootChain.id, { x: startX, y: totalCanvasCenterY - (cardH + gapY)*1.2, w: cardW, h: cardH, color: TYPE_CONFIG.industry_chain.color });
+  if (rootGroup) layoutNodes.set(rootGroup.id, { x: startX + (cardW + gapX), y: totalCanvasCenterY - (cardH + gapY)*0.6, w: cardW, h: cardH, color: TYPE_CONFIG.job_group.color });
+  if (rootJob) layoutNodes.set(rootJob.id, { x: startX + 2*(cardW + gapX), y: totalCanvasCenterY, w: cardW, h: cardH, color: TYPE_CONFIG.job.color });
+}
+
+// ── 检查过滤状态 ──
+function getVisibility(n) {
+  const isCore = ['industry_chain', 'job_group', 'job'].includes(n.type);
+  const matchesFilter = activeFilter === 'all' || n.type === activeFilter || isCore;
+  const matchesSearch = !searchText || n.label.toLowerCase().includes(searchText);
+  return { visible: matchesFilter && matchesSearch, match: matchesSearch && searchText };
+}
+
+// ── 鱼骨分支连线算法：阶梯弯折 ──
+function drawBeautifulLink(src, tgt) {
+  const pS = layoutNodes.get(src), pT = layoutNodes.get(tgt);
+  if (!pS || !pT) return '';
+  const startX = pS.x + pS.w, startY = pS.y + pS.h / 2;
+  const endX = pT.x, endY = pT.y + pT.h / 2;
+  const cp1X = startX + (endX - startX) * 0.4;
+  const cp2X = startX + (endX - startX) * 0.6;
+  return `M ${startX} ${startY} C ${cp1X} ${startY}, ${cp2X} ${endY}, ${endX} ${endY}`;
+}
+
+// ── 🆕 计算全链路无限上下游网络追踪 ──
+function findFullChain(targetId) {
+  const connectedNodes = new Set([targetId]);
+  const connectedLinks = new Set();
+
+  // 1. 广度优先向上追溯（寻找无限层级的所有祖先节点）
+  let queueUp = [targetId];
+  while (queueUp.length > 0) {
+    const currId = queueUp.shift();
+    graph.links.forEach(l => {
+      if (l.target === currId && !connectedNodes.has(l.source)) {
+        connectedNodes.add(l.source);
+        connectedLinks.add(l);
+        queueUp.push(l.source);
+      }
+    });
+  }
+
+  // 2. 广度优先向下追溯（寻找无限层级的所有后代节点）
+  let queueDown = [targetId];
+  while (queueDown.length > 0) {
+    const currId = queueDown.shift();
+    graph.links.forEach(l => {
+      if (l.source === currId && !connectedNodes.has(l.target)) {
+        connectedNodes.add(l.target);
+        connectedLinks.add(l);
+        queueDown.push(l.target);
+      }
+    });
+  }
+  return { nodes: connectedNodes, links: connectedLinks };
+}
+
+// ═══════════════════════════════════════════
+// 画布渲染引擎
+// ═══════════════════════════════════════════
+function render() {
+  computeSwimlaneLayout();
+  
+  const svg = document.getElementById('graph');
+  const view = document.getElementById('viewport');
+  view.innerHTML = '';
+  const ns = 'http://www.w3.org/2000/svg';
+
+  // 计算当前高亮链条对应的核心数据集合
+  let highlightNodes = new Set();
+  let highlightLinks = new Set();
+  if (currentSelectedNodeId) {
+    const chain = findFullChain(currentSelectedNodeId);
+    highlightNodes = chain.nodes;
+    highlightLinks = chain.links;
+  }
+
+  // 注入全景滤镜底座
+  let defs = svg.querySelector('defs') || document.createElementNS(ns, 'defs');
+  defs.innerHTML = `
+    <filter id="cardGlow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#60a5fa" flood-opacity="0.25"/>
+    </filter>
+    <marker id="dotMarker" viewBox="0 0 8 8" refX="4" refY="4" markerWidth="4" markerHeight="4">
+      <circle cx="4" cy="4" r="2.5" fill="#475569" opacity="0.5"/>
+    </marker>
+  `;
+  svg.appendChild(defs);
+
+  // 1. 渲染优雅鱼骨连线层
+  const edgeGroup = document.createElementNS(ns, 'g');
+  graph.links.forEach(l => {
+    const sNode = graph.nodes.find(n => n.id === l.source);
+    const tNode = graph.nodes.find(n => n.id === l.target);
+    if (!sNode || !tNode) return;
+
+    const vS = getVisibility(sNode), vT = getVisibility(tNode);
+    const path = document.createElementNS(ns, 'path');
+    path.setAttribute('d', drawBeautifulLink(l.source, l.target));
+    
+    let cls = 'edge';
+    if (currentSelectedNodeId) {
+      // 激活全链路高亮逻辑
+      if (highlightLinks.has(l)) {
+        cls += ' highlight-path';
+      } else {
+        cls += ' dim';
+      }
+    } else {
+      // 默认基础状态
+      if (!vS.visible || !vT.visible) cls += ' dim';
+      if (searchText && vS.match && vT.match) cls += ' active-branch';
+    }
+    
+    path.setAttribute('class', cls);
+    edgeGroup.appendChild(path);
+  });
+  view.appendChild(edgeGroup);
+
+  // 2. 渲染精致业务名片层
+  const nodeGroup = document.createElementNS(ns, 'g');
+  graph.nodes.forEach(n => {
+    const pos = layoutNodes.get(n.id); if (!pos) return;
+    const v = getVisibility(n);
+
+    const g = document.createElementNS(ns, 'g');
+    let cls = 'node';
+    if (currentSelectedNodeId) {
+      if (highlightNodes.has(n.id)) {
+        cls += ' highlight-node';
+      } else {
+        cls += ' dim';
+      }
+    } else {
+      if (!v.visible) cls += ' dim';
+      if (v.match) cls += ' highlight';
+    }
+    g.setAttribute('class', cls);
+    g.setAttribute('transform', `translate(${pos.x}, ${pos.y})`);
+    
+    // 节点点击交互：阻断、弹框并更新全链路拓扑状态
+    g.onclick = (e) => { 
+      e.stopPropagation(); 
+      popupDetails(n); 
+      if (currentSelectedNodeId === n.id) {
+        currentSelectedNodeId = null; // 重复点击则取消
+      } else {
+        currentSelectedNodeId = n.id;   // 切换追踪节点
+      }
+      render();
+    };
+
+    // 名片底框
+    const rect = document.createElementNS(ns, 'rect');
+    rect.setAttribute('class', 'node-card');
+    rect.setAttribute('width', pos.w);
+    rect.setAttribute('height', pos.h);
+    rect.style.strokeLeft = pos.color;
+    g.appendChild(rect);
+
+    // 层级指示圆点
+    const dot = document.createElementNS(ns, 'circle');
+    dot.setAttribute('cx', '16'); dot.setAttribute('cy', pos.h / 2); dot.setAttribute('r', '5');
+    dot.setAttribute('fill', pos.color);
+    g.appendChild(dot);
+
+    // 主标题文本
+    const title = document.createElementNS(ns, 'text');
+    title.setAttribute('class', 'node-title');
+    title.setAttribute('x', '28'); title.setAttribute('y', '22');
+    title.textContent = n.label.length > 11 ? n.label.slice(0,10)+'…' : n.label;
+    g.appendChild(title);
+
+    // 辅助标注文本
+    const meta = document.createElementNS(ns, 'text');
+    meta.setAttribute('class', 'node-meta');
+    meta.setAttribute('x', '28'); meta.setAttribute('y', '37');
+    meta.textContent = n.entity.level || TYPE_CONFIG[n.type].label;
+    g.appendChild(meta);
+
+    nodeGroup.appendChild(g);
+  });
+  view.appendChild(nodeGroup);
+
+  refreshStatsPanel();
+}
+
+// ═══════════════════════════════════════════
+// 视图交互控制逻辑
+// ═══════════════════════════════════════════
+function applyTransform() {
+  const view = document.getElementById('viewport');
+  if(view) view.setAttribute('transform', `matrix(${transformState.scale}, 0, 0, ${transformState.scale}, ${transformState.x}, ${transformState.y})`);
+}
+
+const wrap = document.getElementById('wrap');
+wrap.addEventListener('mousedown', e => {
+  if (e.button !== 0) return; isDragging = true;
+  startPan = { x: e.clientX - transformState.x, y: e.clientY - transformState.y };
+});
+window.addEventListener('mousemove', e => {
+  if (!isDragging) return;
+  transformState.x = e.clientX - startPan.x; transformState.y = e.clientY - startPan.y;
+  applyTransform();
+});
+window.addEventListener('mouseup', () => { isDragging = false; });
+wrap.addEventListener('wheel', e => {
+  e.preventDefault(); const factor = 1.1; const rect = wrap.getBoundingClientRect();
+  const mX = e.clientX - rect.left, mY = e.clientY - rect.top;
+  const gX = (mX - transformState.x) / transformState.scale, gY = (mY - transformState.y) / transformState.scale;
+  if (e.deltaY < 0) transformState.scale = Math.min(2.5, transformState.scale * factor);
+  else transformState.scale = Math.max(0.15, transformState.scale / factor);
+  transformState.x = mX - gX * transformState.scale; transformState.y = mY - gY * transformState.scale;
+  applyTransform();
+}, { passive: false });
+
+document.getElementById('resetBtn').onclick = () => {
+  if(!graph.nodes.length) return;
+  let minX=Infinity, maxX=-Infinity, minY=Infinity, maxY=-Infinity;
+  layoutNodes.forEach(pos => {
+    if(pos.x < minX) minX = pos.x; if(pos.x + pos.w > maxX) maxX = pos.x + pos.w;
+    if(pos.y < minY) minY = pos.y; if(pos.y + pos.h > maxY) maxY = pos.y + pos.h;
+  });
+  const graphW = (maxX - minX) || 1200, graphH = (maxY - minY) || 800;
+  const cW = wrap.clientWidth, cH = wrap.clientHeight;
+  
+  transformState.scale = Math.min(cW / (graphW + 160), cH / (graphH + 160), 0.85);
+  transformState.x = (cW - graphW * transformState.scale) / 2 - minX * transformState.scale;
+  transformState.y = (cH - graphH * transformState.scale) / 2 - minY * transformState.scale;
+  applyTransform();
+};
+
+function popupDetails(n) {
+  const c = TYPE_CONFIG[n.type]; const e = n.entity || {}; const rows = [];
+  if (e.description) rows.push(`<p>${e.description}</p>`);
+  if (e.summary)     rows.push(`<p>${e.summary}</p>`);
+  if (e.category)    rows.push(`<p><b>业务分类：</b>${e.category}</p>`);
+  if (e.level)       rows.push(`<p><b>能力阶梯：</b>${e.level}</p>`);
+  if (e.tool_related && e.tool_related !== 'None') rows.push(`<p><b>协同核心工具：</b>${e.tool_related}</p>`);
+
+  document.getElementById('detailContent').innerHTML = `
+    <h2 style="color:${c.color}">${n.label}</h2>
+    <p style="color:${c.color}; font-size:12px; font-weight:bold;">[${c.label}]</p>
+    <hr style="border:0; border-top:1px solid var(--border); margin:12px 0;"/>
+    ${rows.join('') || '<p style="color:#475569">标准岗位库中暂无更深入的细节描述。</p>'}
+  `;
+  document.getElementById('detail').classList.add('show');
+}
+
+function refreshStatsPanel() {
+  const t = (type) => graph.nodes.filter(n => n.type === type).length;
+  document.getElementById('stats').innerHTML = `
+    <div class="stat-row"><span class="legend-dot" style="background:#fb7185"></span>核心底座项：${t('industry_chain')+t('job_group')+t('job')}</div>
+    <div class="stat-row"><span class="legend-dot" style="background:#a78bfa"></span>岗位垂直泳道：${t('job_specializations')}</div>
+    <div class="stat-row"><span class="legend-dot" style="background:#f59e0b"></span>解耦业务任务：${t('task')}</div>
+    <div class="stat-row"><span class="legend-dot" style="background:#38bdf8"></span>解耦能力矩阵：${t('competency')}</div>
+    <div class="stat-row"><span class="legend-dot" style="background:#22c55e"></span>落地专业技能：${t('skill')}</div>
+  `;
+}
+
+// ── 交互小组件 ──
+function showToast(msg) {
+  const t = document.getElementById('toast'); t.textContent = msg; t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 1500);
+}
+
+// 触发检索或分类过滤时，自动清除节点高亮状态，防视觉逻辑冲突
+document.getElementById('searchInput').oninput = e => { 
+  searchText = e.target.value.trim().toLowerCase(); 
+  currentSelectedNodeId = null; 
+  render(); 
+};
+document.querySelectorAll('.btn[data-filter]').forEach(b => {
+  b.onclick = () => {
+    document.querySelectorAll('.btn[data-filter]').forEach(x => x.classList.remove('active'));
+    b.classList.add('active'); 
+    activeFilter = b.dataset.filter; 
+    currentSelectedNodeId = null; 
+    render();
+  };
+});
+
+document.getElementById('copyBtn').onclick = () => navigator.clipboard.writeText(location.href).then(() => showToast('关联链接已复制'));
+document.getElementById('closeDetail').onclick = () => document.getElementById('detail').classList.remove('show');
+
+// 点击画布空白处时，隐藏侧边栏并清空链路高亮
+wrap.onclick = () => {
+  document.getElementById('detail').classList.remove('show');
+  if (currentSelectedNodeId !== null) {
+    currentSelectedNodeId = null;
+    render();
+  }
+};
+
+// ── 文件拖拽跨越加载 ──
+document.addEventListener('dragover', e => e.preventDefault());
+document.addEventListener('drop', e => {
+  e.preventDefault(); const file = e.dataTransfer.files[0]; if (!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    try {
+      const raw = JSON.parse(ev.target.result);
+      graph = buildGraph(raw);
+      currentSelectedNodeId = null;
+      document.getElementById('emptyState').style.display = 'none';
+      document.getElementById('sourcePill').textContent = '外部导入: ' + file.name;
+      render();
+      setTimeout(() => document.getElementById('resetBtn').click(), 60);
+    } catch(err) { alert('标准数据源解析失败，请检查规范性: ' + err.message); }
+  };
+  reader.readAsText(file);
+});
+
+// ── 基础数据解密自适应 ──
+async function decodeURLData() {
+  const hash = window.location.hash.replace('#','');
+  const params = new URLSearchParams(hash || window.location.search);
+  const token = params.get('d') || params.get('j');
+  if (!token) return null;
+  function tToBytes(t) {
+    let b64 = String(t).replace(/-/g,'+').replace(/_/g,'/');
+    while (b64.length % 4) b64 += '=';
+    const bin = atob(b64); const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return bytes;
+  }
+  try {
+    const bytes = tToBytes(token);
+    const ds = new DecompressionStream('deflate');
+    const writer = ds.writable.getWriter(); const reader = ds.readable.getReader();
+    writer.write(bytes); writer.close(); const chunks = [];
+    while (true) { const {value, done} = await reader.read(); if (done) break; if (value) chunks.push(value); }
+    let len = chunks.reduce((a,b) => a+b.length, 0), out = new Uint8Array(len), off = 0;
+    for (const c of chunks) { out.set(c, off); off += c.length; }
+    return JSON.parse(new TextDecoder().decode(out));
+  } catch(e) { return null; }
+}
+
+async function loadFromGist() {
+  const hash = window.location.hash.replace('#','');
+  const params = new URLSearchParams(hash || window.location.search);
+  const gid = params.get('gist');
+  if (!gid) return null;
+  try {
+    const res = await fetch('https://api.github.com/gists/' + encodeURIComponent(gid));
+    if (!res.ok) return null;
+    const g = await res.json();
+    const first = Object.keys(g.files || {})[0];
+    if (!first) return null;
+    return JSON.parse(g.files[first].content);
+  } catch(e) { return null; }
+}
+
+(async function init() {
+  const urlData = await decodeURLData() || await loadFromGist();
+  if (urlData) {
+    graph = buildGraph(urlData);
+    document.getElementById('emptyState').style.display = 'none';
+    document.getElementById('sourcePill').textContent = '动态解析就绪';
+    render();
+    setTimeout(() => document.getElementById('resetBtn').click(), 100);
+  }
+})();
+</script>
+</body>
+</html>
